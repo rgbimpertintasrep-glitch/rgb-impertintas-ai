@@ -17,6 +17,14 @@ services:
         sync: false
       - key: SYNC_ADMIN_TOKEN
         sync: false
+      - key: ALTIS_EXPORT_URL
+        sync: false
+      - key: ALTIS_EXPORT_TOKEN
+        sync: false
+      - key: ALTIS_STOCK_FIELD
+        sync: false
+      - key: ALTIS_EXPORT_IS_FULL_SNAPSHOT
+        value: "false"
       - key: EVOLUTION_API_URL
         sync: false
       - key: EVOLUTION_API_KEY
