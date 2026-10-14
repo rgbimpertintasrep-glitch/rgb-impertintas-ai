@@ -1,0 +1,51 @@
+name: Altis Catalog Sync
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+permissions:
+  contents: read
+concurrency:
+  group: altis-catalog-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Connect private Tailscale network
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: rgb-altis-sync
+      - name: Check required secrets
+        shell: bash
+        env:
+          ALTIS_EXPORT_URL: ${{ secrets.ALTIS_EXPORT_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          test -n "$ALTIS_EXPORT_URL" || { echo "Missing ALTIS_EXPORT_URL secret"; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "Missing SUPABASE_URL secret"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing Supabase service role secret"; exit 1; }
+          tailscale status
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck and tests
+        run: npm run typecheck && npm test
+      - name: Synchronize catalog
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALTIS_EXPORT_URL: ${{ secrets.ALTIS_EXPORT_URL }}
+          ALTIS_EXPORT_TOKEN: ${{ secrets.ALTIS_EXPORT_TOKEN }}
+          ALTIS_STOCK_FIELD: ${{ secrets.ALTIS_STOCK_FIELD }}
+          ALTIS_EXPORT_IS_FULL_SNAPSHOT: ${{ vars.ALTIS_EXPORT_IS_FULL_SNAPSHOT }}
+          ALTIS_MAX_PRODUCTS: "5000"
+        run: npm run sync
