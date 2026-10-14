@@ -9,8 +9,7 @@ function chunks<T>(items: T[], size: number): T[][] {
 export type SyncResult = { received: number; normalized: number; rawSaved: number; stockField: string | null; deactivated: number };
 
 export async function syncAltisPayload(db: SupabaseClient, payload: unknown, options: { stockField?: string; maxProducts?: number; fullSnapshot?: boolean; source?: string } = {}): Promise<SyncResult> {
-  const started = new Date().toISOString();
-  const source = options.source ?? "manual_json";
+  const started = new Date().toISOString(), source = options.source ?? "manual_json";
   const received = extractProducts(payload, options.maxProducts ?? 5000);
   let runId: number | null = null;
   const { data: run, error: runError } = await db.from("altis_sync_runs").insert({
@@ -25,7 +24,7 @@ export async function syncAltisPayload(db: SupabaseClient, payload: unknown, opt
       const publicRows = batch.map(({ _raw_payload: privatePayload, ...row }) => row);
       const { data: saved, error } = await db.from("product_catalog").upsert(publicRows, { onConflict: "erp_code" }).select("id,erp_code");
       if (error) throw new Error("Falha ao gravar catálogo: " + error.message);
-      const ids = new Map<string, string>((saved ?? []).map((item: any) => [String(item.erp_code), String(item.id)]));
+      const ids = new Map<string, string>((saved ?? []).map((item: any) => [String(item.erp_code), String(item.id)] as [string, string]));
       const rawRows = batch.map((row) => ({
         erp_code: row.erp_code, product_id: ids.get(row.erp_code), source_payload: row._raw_payload,
         source_hash: row.source_hash, last_seen_at: row.last_seen_at
