@@ -12,6 +12,53 @@ const admin = process.env.SYNC_ADMIN_TOKEN || "";
 const db: SupabaseClient | null = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 const limits = new Map<string, { since: number; count: number }>();
 const MAX_BODY = 40 * 1024 * 1024;
+const MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+function conversationHash(channel: "web" | "whatsapp", identity: string): string {
+  const secret = process.env.SYNC_ADMIN_TOKEN || process.env.EVOLUTION_WEBHOOK_TOKEN || key || url;
+  return createHmac("sha256", secret).update(channel + ":" + identity).digest("hex");
+}
+async function loadRecentTurns(db: SupabaseClient, sessionHash: string, channel: "web" | "whatsapp"): Promise<ConversationTurn[]> {
+  try {
+    const { data, error } = await db.from("rgb_conversation_memory")
+      .select("recent_turns")
+      .eq("session_key_hash", sessionHash)
+      .eq("channel", channel)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (error || !Array.isArray(data?.recent_turns)) return [];
+    return data.recent_turns
+      .filter((turn: any) => turn && typeof turn.user === "string" && typeof turn.assistant === "string")
+      .slice(-4)
+      .map((turn: any) => ({ user: turn.user.slice(0, 240), assistant: turn.assistant.slice(0, 360) }));
+  } catch {
+    return [];
+  }
+}
+async function saveRecentTurns(
+  db: SupabaseClient,
+  sessionHash: string,
+  channel: "web" | "whatsapp",
+  previous: ConversationTurn[],
+  userMessage: string,
+  assistantMessage: string
+): Promise<void> {
+  try {
+    const now = new Date();
+    const recent = [...previous.slice(-3), {
+      user: userMessage.trim().slice(0, 240),
+      assistant: assistantMessage.trim().slice(0, 360)
+    }].slice(-4);
+    await db.from("rgb_conversation_memory").upsert({
+      session_key_hash: sessionHash,
+      channel,
+      recent_turns: recent,
+      updated_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + MEMORY_TTL_MS).toISOString()
+    }, { onConflict: "session_key_hash" });
+  } catch {
+    // Persistence failure must not block an answer to a customer.
+  }
+}
 
 function json(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
