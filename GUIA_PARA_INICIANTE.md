@@ -20,6 +20,12 @@ Já está publicado:
 A memória curta guarda até 4 trocas abreviadas por conversa, e o perfil estruturado guarda apenas preferências explicitamente informadas e fatos do serviço atual, por até 30 dias. O perfil pode registrar prioridade de compra (menor preço, custo-benefício ou qualidade), marca preferida, nível de experiência, superfície, ambiente, estado da superfície, cor e acabamento desejados. A identidade da conversa é protegida por hash; mensagens guardadas têm padrões comuns de e-mail, documentos e segredos removidos. Isso reduz dados desnecessários, mas não é garantia de que todo dado sensível seja detectado: não envie senhas, documentos nem dados bancários. A página web e o webhook do WhatsApp usam a memória separadamente.
 
 O agente foi ajustado para:
+- **não falar preço espontaneamente:** perguntas de recomendação, comparação ou disponibilidade não recebem preços nos dados enviados ao modelo;
+- **responder preço somente se o cliente pedir:** a aplicação consulta o catálogo e devolve o valor cadastrado sem usar a NVIDIA para inventar/estimar preço; se a embalagem ou o produto não estiver bem identificado, pergunta antes de informar;
+- recusar cotar quando a pesquisa encontrar várias versões igualmente plausíveis, pedindo que o cliente escolha o nome/tamanho correto;
+- aceitar promoção somente quando for um preço positivo e menor que o preço normal cadastrado;
+- bloquear a resposta se o modelo, numa recomendação, tentar mencionar dinheiro sem o cliente ter pedido preço;
+- responder a correções como “não é disso que estou falando” com um pedido de desculpas e zerar o contexto do projeto anterior;
 - responder consultas simples de marca, preço, contato e endereço sem chamar a NVIDIA quando uma resposta determinística basta;
 - consultar até 40 artigos da base técnica, selecionar os mais relevantes e enviar até 4 trechos com conteúdo limitado;
 - buscar candidatos por nome/marca e também expandir abreviações comuns do Altis, como ACR/acrílica;
@@ -116,19 +122,25 @@ O sistema salva os campos originais do export numa tabela restrita do Supabase, 
 - **JSON inválido:** confira se selecionou a exportação JSON original do Altis, não um PDF, planilha ou captura de tela.
 - **Timeout ou erro 5xx:** aguarde o serviço acordar e tente de novo. O plano gratuito do Render pode suspender aplicações inativas.
 
+### Regra de preço: fonte e limites
+
+Quando o cliente pedir um preço, o agente usa o preço de varejo ou a promoção válida que já consta no catálogo Supabase. O modelo generativo não calcula nem cria esse número. Se a pesquisa não identificar um SKU com segurança ou encontrar versões empatadas (por exemplo, embalagens de 900 ml e 3,6 L), a resposta pede o nome/tamanho exato em vez de cotar um item por aproximação.
+
+Isso elimina preços fabricados pelo modelo, mas não consegue garantir que o valor da fonte nunca esteja desatualizado. A última importação conferida foi uma cópia do Altis em 15/10/2026; a sincronização automática com o Altis ainda é uma etapa pendente. Até a sincronização funcionar e ser testada, reimporte uma exportação atualizada antes de usar o agente como fonte final de preço.
+
 ## Passo 4 — testar o agente sem WhatsApp
 
 Abra https://rgb-impertintas-ai.onrender.com/
 
 Teste estas mensagens uma de cada vez:
 1. Bom dia
-2. Vocês trabalham com Maxvinil?
-3. Qual o preço do esmalte Cobert ex 3,6 L camurça? (use o nome tal como aparece no seu catálogo)
-4. Quero pintar um muro de prata; qual você recomenda?
-5. Só quero um cinza-prata comum, e o muro pega sol e chuva.
-6. Não quero o mais barato: priorizo qualidade e durabilidade.
-7. Não temos a cor exata? Procure a alternativa mais próxima, sem garantir igualdade de cor.
-8. Agora quero pintar um portão de madeira. (verifique se não usa o contexto antigo do muro)
+2. Vocês trabalham com Maxvinil? (a resposta não deve listar preços)
+3. Quero uma tinta boa para parede externa. (a resposta não deve dar preço sem você pedir)
+4. Ta doido... tô falando nada disso. (a resposta deve pedir desculpas e recomeçar, sem falar de muro/prata)
+5. Quanto custa o esmalte Cobert ex 3,6 L camurça? (só deve mostrar um preço se o item correto ficar claramente identificado no catálogo)
+6. Quanto custa a tinta azul? (deve pedir o nome/embalagem, porque é genérico demais para cotar)
+7. Não quero o mais barato: priorizo qualidade e durabilidade. (deve falar da recomendação, sem preço)
+8. Agora quero pintar um portão de madeira. (não deve continuar o diagnóstico antigo de muro)
 
 Confira se o preço coincide com o Altis. Não considere o estoque validado ainda. A personalidade do agente foi configurada para ser acolhedora, prática, consultiva e curta, como um bom atendente de balcão da RGB — sem inventar dados e sem pressionar o cliente.
 
