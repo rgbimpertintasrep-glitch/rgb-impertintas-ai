@@ -140,3 +140,33 @@ test("does not offer automotive paint, metallic enamel or brocal as wall-paint a
   const compatible = filterCompatibleCandidates(products, { project: { surface: "alvenaria", environment: "external", desiredColor: "prata" } });
   assert.deepEqual(compatible.map((p) => p.erp_code), ["4"]);
 });
+
+import { rankCompatibleCandidates } from "../src/ai.js";
+
+test("respects a stated preference for a lower price only after removing incompatible products", () => {
+  const products = [
+    { erp_code: "cheap-wrong", name: "ESMALTE SINTETICO PRATA", brand: "LUZTOL", retail_price: 25, promotional_price: null },
+    { erp_code: "wall-1", name: "TINTA ACRILICA EXTERNA CINZA", brand: "MAXVINIL", retail_price: 80, promotional_price: null },
+    { erp_code: "wall-2", name: "TINTA ACRILICA EXTERNA CINZA ECONOMICA", brand: "RENDColor", retail_price: 50, promotional_price: null }
+  ] as any[];
+  const ranked = rankCompatibleCandidates(products, { pricePriority: "lowest_price", project: { surface: "alvenaria", environment: "external" } });
+  assert.deepEqual(ranked.map((p) => p.erp_code), ["wall-2", "wall-1"]);
+});
+
+test("remembers the latest explicit color and resets stale surface-specific details for a new project", () => {
+  const color = updateCustomerProfile({}, ["Não quero branco, prefiro azul."]);
+  assert.equal(color.project?.desiredColor, "azul");
+  const next = updateCustomerProfile(
+    { pricePriority: "quality", project: { surface: "alvenaria", environment: "external", desiredColor: "branco", condition: "reboco cru/novo" } },
+    ["Agora preciso pintar um portão de madeira."]
+  );
+  assert.equal(next.project?.surface, "madeira");
+  assert.equal(next.project?.environment, undefined);
+  assert.equal(next.project?.desiredColor, undefined);
+  assert.equal(next.pricePriority, "quality");
+});
+
+test("does not interpret refusing the cheapest option as a low-price priority", () => {
+  const profile = updateCustomerProfile({}, ["Não quero o mais barato; quero qualidade e durabilidade, preço não é o principal."]);
+  assert.equal(profile.pricePriority, "quality");
+});
