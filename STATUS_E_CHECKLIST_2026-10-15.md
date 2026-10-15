@@ -7,7 +7,7 @@
 - **Preço/nome/marca na importação:** 0 divergências encontradas ao comparar os 2.018 produtos normalizados com o JSON original armazenado do Altis.
 - **Preço promocional:** 3 promoções no catálogo; comparação de regras de validação encontrou 0 divergências.
 - **Busca por marca:** código corrigido no GitHub para ignorar palavras de preenchimento como “tem”, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo. Testes de CI passaram no commit da correção de regex em 15/10.
-- **Ainda não está pronto para operação completa:** correção de busca agora foi implantada no Render, mas falta validar ao vivo no navegador; a sincronização automática ainda não foi comprovada; o canal WhatsApp não está conectado.
+- **Ainda não está pronto para operação completa:** memória curta e otimizações de contexto foram implementadas e publicadas no Render; falta validação funcional do chat com o banco conectado, configurar a chave Tailscale do workflow e obter a URL real de exportação do Altis. O canal WhatsApp ainda não está conectado à Evolution.
 
 ## Checklist do que já foi feito
 
@@ -23,6 +23,18 @@
 - [x] Corrigida a sintaxe de expressões do GitHub Actions no workflow de sincronização.
 - [x] CI GitHub confirmou sucesso nos testes recentes de busca e inferência de categoria: https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/actions
 - [x] Criado e atualizado este checklist e o guia para iniciante.
+
+## Memória e consumo de tokens
+
+- [x] Criada a tabela `public.rgb_conversation_memory` com RLS ativado, sem acesso para roles anon/authenticated e acesso de servidor pelo service_role.
+- [x] Site e webhook foram ligados à memória curta. Guarda até 4 trocas encurtadas por sessão, com identidade derivada por HMAC; envia até as 2 últimas trocas ao modelo nas perguntas que precisam de contexto.
+- [x] Registros vencidos são removidos periodicamente quando o serviço está ativo; validade da memória: 30 dias.
+- [x] Aviso de memória/retensão incluído no rodapé do chat web e na primeira resposta de um contato WhatsApp.
+- [x] Respostas simples evitam a NVIDIA quando a regra de catálogo basta; conhecimento limitado a 3 artigos relevantes (até 520 caracteres), no máximo 4 produtos no prompt, `max_tokens=240`, temperatura 0,2.
+- [x] CI passou em typecheck, testes e build para o commit `83ac635`; commits posteriores de aviso de privacidade e documentação também passaram no CI.
+- [x] Deploy do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
+- [ ] Fazer um teste funcional depois do deploy: várias mensagens seguidas na mesma janela web e verificar se perguntas de continuação como “e para fora?” usam contexto anterior. A tabela de memória estava vazia na última consulta porque a versão nova ainda não tinha gerado conversas.
+- [ ] Confirmar `NVIDIA_API_KEY` no Render e se o modelo está efetivamente respondendo, em vez de fallback determinístico.
 
 ## Auditoria do catálogo
 
@@ -60,7 +72,7 @@ O JSON analisado não ofereceu uma categoria explícita aproveitável, então as
 - [ ] **Preços zerados:** corrigir ou validar os 8 casos no Altis.
 - [ ] **Estoque:** escolher e validar, com responsável do Altis, qual campo significa saldo real vendável antes de popular `ALTIS_STOCK_FIELD`.
 - [ ] **Sincronização automática:** o workflow GitHub existe e agenda execução a cada 15 minutos, mas só foi confirmada uma importação manual (`manual_json`); não há sincronização automática bem-sucedida registrada.
-- [ ] Criar/adicionar como GitHub Actions Secrets: `TAILSCALE_AUTHKEY`, `ALTIS_EXPORT_URL`, `RENDER_APP_URL=https://rgb-impertintas-ai.onrender.com` e `SYNC_ADMIN_TOKEN` (mesmo valor do Render). `ALTIS_EXPORT_TOKEN` somente se o endpoint exigir.
+- [ ] Criar/adicionar como GitHub Actions Secrets: `TAILSCALE_AUTHKEY`, `ALTIS_EXPORT_URL`, `RENDER_APP_URL=https://rgb-impertintas-ai.onrender.com` e `SYNC_ADMIN_TOKEN` (mesmo valor do Render). `ALTIS_EXPORT_TOKEN` somente se o endpoint exigir. A última execução do workflow falhou no passo Tailscale com a mensagem de que não recebeu uma chave de autenticação; `TAILSCALE_AUTHKEY` está ausente ou vazio.
 - [ ] **Bloqueador da sincronização:** obter uma URL real, autorizada e testável que retorne o JSON completo do Altis pela rede privada, via API oficial ou uma ponte local autorizada. O IP Tailscale não é uma API e não basta sozinho. Não inventar URL nem expor o ERP diretamente à internet.
 - [ ] Executar manualmente o workflow depois que todos os secrets e a URL real existirem: https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/actions/workflows/altis-sync.yml
 - [ ] **WhatsApp:** escolher Evolution API em hospedagem que tenha processo persistente e volume persistente para a sessão, ou adaptar o agente para a API oficial WhatsApp Business Cloud da Meta. A Evolution API separada ainda não está implantada e as variáveis `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` e `EVOLUTION_INSTANCE` ainda precisam ser configuradas.
