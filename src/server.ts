@@ -132,26 +132,27 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     const memoryKey = conversationHash("whatsapp", m.jid);
     const recentTurns = await loadRecentTurns(db, memoryKey, "whatsapp");
     const answer = await answerCustomer(db, m.text, recentTurns);
+    const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade ao atendimento, mantemos um contexto curto das últimas mensagens por até 30 dias. Evite enviar senhas ou dados sensíveis.";
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
     const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
     const postText = (payload: Record<string, unknown>) => fetch(sendUrl, {
       method: "POST", headers: { "content-type": "application/json", apikey: apiKey },
       body: JSON.stringify(payload), signal: AbortSignal.timeout(15000)
     });
-    let sendResponse = await postText({ number, textMessage: { text: answer.reply } });
+    let sendResponse = await postText({ number, textMessage: { text: replyText } });
     if (sendResponse.status === 400) {
       const errorBody = await sendResponse.text();
       // Evolution deployments differ by version: older builds accept textMessage.text,
       // while some newer builds validate a top-level text field.
       if (/requires property\s*["']?text|property ["']text["']/i.test(errorBody)) {
-        sendResponse = await postText({ number, text: answer.reply });
+        sendResponse = await postText({ number, text: replyText });
       } else {
         throw new Error("Evolution HTTP 400: payload de envio recusado.");
       }
     }
     if (!sendResponse.ok) throw new Error("Evolution HTTP " + sendResponse.status);
     await db.from("evolution_processed_events").update({ status: "sent", processed_at: new Date().toISOString() }).eq("event_id", eventId);
-    await saveRecentTurns(db, memoryKey, "whatsapp", recentTurns, m.text, answer.reply);
+    await saveRecentTurns(db, memoryKey, "whatsapp", recentTurns, m.text, replyText);
     return json(res, 200, { accepted: true, processed: true, sent: true });
   } catch {
     await db.from("evolution_processed_events").delete().eq("event_id", eventId);
