@@ -128,7 +128,9 @@ export function consultativeGuard(question: string, recentTurns: ConversationTur
   }
   const confirmedMetallic = /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade)\b/.test(all);
   if (confirmedMetallic) {
-    return "Entendi: você quer o efeito prata metálico no muro. No cadastro aparecem produtos prateados de outras linhas, mas o nome não comprova que sejam próprios para reboco/cimento; não vou te indicar um produto incompatível só para passar um preço. O muro já está pintado ou está no reboco cru?";
+    const surfaceConditionKnown = /\b(ja esta pintado|esta pintado|pintado|reboco cru|reboco novo|sem pintura|esta no reboco|cru)\b/.test(all);
+    if (!surfaceConditionKnown) return "Entendi: você quer o efeito prata metálico no muro. O nome dos esmaltes prateados e das tintas automotivas não comprova que sejam próprios para reboco/cimento; não vou indicar um desses sem ficha técnica. O muro já está pintado ou está no reboco cru?";
+    return "Mesmo sabendo a condição do muro, só é seguro indicar um efeito prata metálico depois de confirmar uma ficha técnica que aprove o uso em alvenaria. Esmalte para metal e tinta automotiva não são substitutos automáticos; a equipe precisa confirmar o sistema correto com o fabricante."; 
   }
   const plainGrey = /\b(so um tom cinza|cinza prata comum|cinza-prata comum|sem efeito metalico|nao quero metalico)\b/.test(all);
   const environmentAnswered = /\b(sol|chuva|externo|externa|interno|interna|exposto|coberto)\b/.test(all);
@@ -275,7 +277,11 @@ export async function answerCustomer(
 
   // Compatibility guard takes precedence over product matching.
   const guardedReply = consultativeGuard(q, recent);
-  if (guardedReply) return { reply: guardedReply, mode: "compatibility_guard", productsFound: 0 };
+  const userHistory = norm(recent.map((turn) => turn.user).join(" ") + " " + q);
+  const needsOfficialMetallicCheck = Boolean(process.env.TAVILY_API_KEY) &&
+    /\b(muro|parede|reboco|alvenaria|cimento|fachada)\b/.test(userHistory) &&
+    /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade)\b/.test(userHistory);
+  if (guardedReply && !needsOfficialMetallicCheck) return { reply: guardedReply, mode: "compatibility_guard", productsFound: 0 };
 
   const products = await searchProducts(db, q);
   const directBrandReply = brandAvailabilityReply(q, products);
