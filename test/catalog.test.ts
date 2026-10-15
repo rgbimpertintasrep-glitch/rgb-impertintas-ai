@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { extractProducts, isStockField, normalizeAltisProduct, normalizeProducts, parseNumber } from "../src/catalog.js";
-import { brandAvailabilityReply, queryTerms } from "../src/ai.js";
+import { brandAvailabilityReply, queryTerms, isContextCorrection, isExplicitPriceQuestion, priceReplyFromCatalog } from "../src/ai.js";
 
 test("extracts the Altis dados array", () => {
   assert.equal(extractProducts({ dados: [{ produtoId: 1, nome: "Produto" }] }).length, 1);
@@ -223,4 +223,52 @@ test("preserves gray-silver as a compound color intent", () => {
   assert.equal(metallic.project?.desiredFinish, "metalico-brilhante");
   const notSilverGray = updateCustomerProfile({}, ["Não quero cinza-prata, prefiro azul."]);
   assert.equal(notSilverGray.project?.desiredColor, "azul");
+});
+
+test("explicitly rejects stale context instead of continuing the previous product diagnosis", () => {
+  assert.equal(isContextCorrection("ta doido... to falando nada disso"), true);
+  assert.equal(isContextCorrection("Não é disso que estou falando, esquece isso."), true);
+  assert.equal(isContextCorrection("Quero pintar um muro de prata."), false);
+});
+
+test("only explicit price requests trigger catalog price replies", () => {
+  assert.equal(isExplicitPriceQuestion("Quanto custa a tinta Maxvinil?"), true);
+  assert.equal(isExplicitPriceQuestion("Qual o preço do esmalte Cobert ex?"), true);
+  assert.equal(isExplicitPriceQuestion("Tem Maxvinil?"), false);
+  assert.equal(isExplicitPriceQuestion("Quero pintar um muro de prata, qual você recomenda?"), false);
+});
+
+test("quotes only a valid price from the catalog for a sufficiently identified product", () => {
+  const product = {
+    erp_code: "100-1",
+    name: "ESMALTE COBERTEX CAMURCA 3,6L",
+    brand: "LUZTOL",
+    category: "Esmaltes",
+    retail_price: 99.9,
+    promotional_price: 89.9,
+    stock_quantity: null,
+    stock_verified_at: null,
+    stock_source_field: null,
+    technical_facts: []
+  } as any;
+  const reply = priceReplyFromCatalog("Qual o preço do esmalte Cobertex camurça 3,6L?", [product]);
+  assert.match(reply, /ESMALTE COBERTEX CAMURCA 3,6L/i);
+  assert.match(reply, /R\$\s*89,90/);
+  assert.doesNotMatch(reply, /R\$\s*99,90/);
+});
+
+test("does not guess a price when the product is not identified", () => {
+  const reply = priceReplyFromCatalog("Qual o preço da tinta azul?", []);
+  assert.doesNotMatch(reply, /R\$\s*\d/);
+  assert.match(reply, /nome do produto e o tamanho da embalagem/i);
+});
+
+test("asks the buyer to choose a variant instead of quoting an ambiguous price", () => {
+  const products = [
+    { erp_code: "a", name: "ESMALTE COBERTEX CAMURCA 900ML", brand: "LUZTOL", retail_price: 35, promotional_price: null },
+    { erp_code: "b", name: "ESMALTE COBERTEX CAMURCA 3,6L", brand: "LUZTOL", retail_price: 99, promotional_price: null }
+  ] as any[];
+  const reply = priceReplyFromCatalog("Qual o preço do esmalte Cobertex camurça?", products);
+  assert.doesNotMatch(reply, /R\$\s*\d/);
+  assert.match(reply, /mais de uma versão parecida/i);
 });
