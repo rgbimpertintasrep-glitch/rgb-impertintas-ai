@@ -80,6 +80,21 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
     .slice(0, 8)
     .map((item) => item.product);
 }
+export function brandAvailabilityReply(question: string, products: Product[]): string | null {
+  const n = norm(question);
+  if (!/\\b(tem|temos|trabalha|trabalham|vende|vendem|possui|disponivel|disponiveis)\\b/.test(n)) return null;
+  const words = terms(question);
+  const brandToken = words
+    .filter((word) => products.some((p) => norm(p.brand ?? "").includes(word)))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!brandToken) return null;
+  const product = products.find((p) => norm(p.brand ?? "").includes(brandToken) && p.brand);
+  if (!product?.brand) return null;
+  const displayBrand = product.brand.toLowerCase().replace(/(^|\\s)\\p{L}/gu, (v) => v.toUpperCase());
+  return "Temos produtos da marca " + displayBrand +
+    " cadastrados no catálogo. O saldo disponível precisa ser confirmado pela equipe. " +
+    "Você procura tinta para parede, esmalte, resina ou outro produto?";
+}
 async function facts(db: SupabaseClient): Promise<Array<{ title: string; content: string }>> {
   const { data, error } = await db.from("knowledge_articles").select("title,content").eq("active", true).eq("visibility", "public").limit(20);
   if (error) return [];
@@ -112,6 +127,8 @@ function fallback(q: string, products: Product[], knowledge: Array<{ title: stri
 export async function answerCustomer(db: SupabaseClient, question: string): Promise<{ reply: string; mode: string; productsFound: number }> {
   const q = question.trim().slice(0, 1200);
   const [products, knowledge] = await Promise.all([searchProducts(db, q), facts(db)]);
+  const directBrandReply = brandAvailabilityReply(q, products);
+  if (directBrandReply) return { reply: directBrandReply, mode: "catalog_brand", productsFound: products.length };
   const base = fallback(q, products, knowledge);
   const key = process.env.NVIDIA_API_KEY;
   if (!key) return { reply: base, mode: "rules", productsFound: products.length };
