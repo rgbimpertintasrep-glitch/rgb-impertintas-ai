@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { extractProducts, isStockField, normalizeAltisProduct, normalizeProducts, parseNumber } from "../src/catalog.js";
-import { queryTerms } from "../src/ai.js";
+import { brandAvailabilityReply, queryTerms } from "../src/ai.js";
 
 test("extracts the Altis dados array", () => {
   assert.equal(extractProducts({ dados: [{ produtoId: 1, nome: "Produto" }] }).length, 1);
@@ -52,4 +52,17 @@ test("rejects oversized or malformed exports; parses currency decimals conservat
 test("ignores Portuguese filler words so product queries prioritize the requested brand", () => {
   assert.deepEqual(queryTerms("Tem maxvinil?"), ["maxvinil"]);
   assert.deepEqual(queryTerms("Vocês têm tinta Maxvinil, por favor?"), ["tinta", "maxvinil"]);
+});
+
+test("answers direct brand availability only from matching catalog results", () => {
+  const product = {
+    erp_code: "1-1015", name: "ACR PINTAMAX FOS BRANCO NEVE GL 3,6L MAXVINIL",
+    brand: "MAXVINIL", category: "Tintas e complementos", category_source: "inferred",
+    retail_price: 49.9, promotional_price: null, stock_quantity: null,
+    stock_verified_at: null, stock_source_field: null
+  };
+  const reply = brandAvailabilityReply("Tem maxvinil?", [product]);
+  assert.match(reply ?? "", /marca Maxvinil cadastrados no catálogo/i);
+  assert.match(reply ?? "", /saldo disponível precisa ser confirmado/i);
+  assert.equal(brandAvailabilityReply("Qual o preço dessa tinta?", [product]), null);
 });
