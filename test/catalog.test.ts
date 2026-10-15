@@ -170,3 +170,31 @@ test("does not interpret refusing the cheapest option as a low-price priority", 
   const profile = updateCustomerProfile({}, ["Não quero o mais barato; quero qualidade e durabilidade, preço não é o principal."]);
   assert.equal(profile.pricePriority, "quality");
 });
+
+test("uses verified product technical facts to reject a wrong surface", () => {
+  const product = {
+    erp_code: "TECH-1",
+    name: "ACR TINTA PREMIUM ACETINADA",
+    brand: "EXAMPLE",
+    retail_price: 120,
+    promotional_price: null,
+    technical_facts: [{
+      manufacturer: "Fabricante",
+      source_url: "https://manufacturer.example/technical-bulletin",
+      source_title: "Boletim técnico",
+      suitable_surfaces: ["metal"],
+      excluded_surfaces: [],
+      use_cases: [],
+      application_guidance: "Somente uso em metal.",
+      surface_preparation: null,
+      dilution_guidance: null,
+      coat_guidance: null,
+      coverage_guidance: null,
+      drying_guidance: null,
+      technical_excerpt: null,
+      verified_at: "2026-10-15T00:00:00Z"
+    }]
+  } as any;
+  assert.deepEqual(filterCompatibleCandidates([product], { project: { surface: "alvenaria" } }), []);
+  assert.deepEqual(filterCompatibleCandidates([product], { project: { surface: "metal" } }).map((p) => p.erp_code), ["TECH-1"]);
+});
