@@ -76,18 +76,27 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
     const finishes = ["fosco", "acetinado", "semibrilho", "semi brilho", "brilhante", "metalico", "textura"];
     const rejectedFinishes = finishes.filter((x) => {
       const word = norm(x);
-      return new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+(?:brilho\\s+)?" + word + "\\b").test(n);
+      return new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+(?:(?:brilho|efeito)\\s+)?" + word + "\\b").test(n);
     });
     if (p.desiredFinish && rejectedFinishes.some((x) => norm(x) === norm(p.desiredFinish ?? ""))) delete p.desiredFinish;
-    const finish = finishes
-      .filter((x) => n.includes(norm(x)) && !rejectedFinishes.some((rejected) => norm(rejected) === norm(x)))
-      .sort((a, b) => n.lastIndexOf(norm(b)) - n.lastIndexOf(norm(a)))[0];
-    if (finish) p.desiredFinish = norm(finish);
+    const positiveFinishes = finishes.filter((x) => n.includes(norm(x)) && !rejectedFinishes.some((rejected) => norm(rejected) === norm(x)));
+    const hasMetallic = positiveFinishes.some((x) => norm(x) === "metalico");
+    const hasBright = positiveFinishes.some((x) => norm(x) === "brilhante");
+    if (hasMetallic && hasBright) p.desiredFinish = "metalico-brilhante";
+    else {
+      const finish = positiveFinishes.sort((a, b) => n.lastIndexOf(norm(b)) - n.lastIndexOf(norm(a)))[0];
+      if (finish) p.desiredFinish = norm(finish);
+    }
     const colors = ["branco", "preto", "prata", "cinza", "azul", "verde", "amarelo", "vermelho", "bege", "palha", "camurca", "marrom", "rosa", "roxo", "dourado"];
-    if (/\bcinza[- ]prata\b/.test(n)) p.desiredColor = "cinza-prata";
+    const rejectsCompoundSilverGray = /\b(nao quero|nao gosto de|sem|evitar|evite)\s+cinza[- ]prata\b/.test(n);
+    if (/\bcinza[- ]prata\b/.test(n) && !rejectsCompoundSilverGray) p.desiredColor = "cinza-prata";
     else {
       const color = colors
-        .filter((x) => new RegExp("\\b" + x + "\\b").test(n) && !new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+" + x + "\\b").test(n))
+        .filter((x) => {
+          const isNegated = new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+" + x + "\\b").test(n);
+          const isPartOfRejectedCompound = (x === "cinza" || x === "prata") && rejectsCompoundSilverGray;
+          return new RegExp("\\b" + x + "\\b").test(n) && !isNegated && !isPartOfRejectedCompound;
+        })
         .sort((a, b) => n.lastIndexOf(b) - n.lastIndexOf(a))[0];
       if (color) p.desiredColor = color;
     }
