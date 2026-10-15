@@ -26,32 +26,44 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
   const messages = userMessages.slice(-6);
   for (const text of messages) {
     const n = norm(text);
-    if (/\b(mais barato|o mais barato|menor preco|menor preço|mais economico|mais econômica|economizar|sem gastar muito|barat[oa])\b/.test(n)) profile.pricePriority = "lowest_price";
-    else if (/\b(custo beneficio|custo-beneficio|equilibrio entre preco e qualidade|bom e barato|vale mais a pena)\b/.test(n)) profile.pricePriority = "cost_benefit";
-    else if (/\b(qualidade acima do preco|gosto de qualidade|qualidade e durabilidade|preco nao e o principal|melhor qualidade|premium|mais duravel|mais resistente|nao importa o preco|nao importa o preço)\b/.test(n)) profile.pricePriority = "quality";
+    const explicitlyRejectsCheap = /\b(nao quero|nao busco|nao precisa ser|nao tem que ser)\b.{0,24}\b(barato|economico|mais barato|menor preco)\b/.test(n);
+    const asksCostBenefit = /\b(custo beneficio|equilibrio entre preco e qualidade|bom e barato|vale mais a pena|duravel sem gastar muito|bom sem pagar muito)\b/.test(n);
+    const prioritizesQuality = /\b(qualidade acima do preco|gosto de qualidade|qualidade e durabilidade|preco nao e o principal|melhor qualidade|premium|mais duravel|mais resistente|nao importa o preco|nao quero baixa qualidade)\b/.test(n);
+    const prioritizesLowestPrice = /\b(mais barato|o mais barato|menor preco|mais economico|economizar|barat[oa]|menor custo|sem gastar muito)\b/.test(n) && !explicitlyRejectsCheap;
+    if (asksCostBenefit) profile.pricePriority = "cost_benefit";
+    else if (prioritizesQuality) profile.pricePriority = "quality";
+    else if (prioritizesLowestPrice) profile.pricePriority = "lowest_price";
     if (/\b(sou pintor|sou profissional|trabalho com pintura|pintor profissional|tenho experiencia com pintura)\b/.test(n)) profile.experienceLevel = "professional";
     else if (/\b(nunca pintei|nao entendo de pintura|sou leigo|sou iniciante|me explica simples|nao entendo disso)\b/.test(n)) profile.experienceLevel = "beginner";
     if (/\b(prefiro|minha marca|gosto mais da marca|so compro|só compro|quero especificamente|quero da marca)\b/.test(n)) {
-      const found = KNOWN_BRANDS.filter((brand) => n.includes(brand));
+      const compactMessage = n.replace(/[^a-z0-9]/g, "");
+      const found = KNOWN_BRANDS.filter((brand) => compactMessage.includes(brand.replace(/[^a-z0-9]/g, "")));
       profile.preferredBrands = [...new Set([...(profile.preferredBrands ?? []), ...found])].slice(-5);
     }
-    const p = profile.project ?? {};
+    let p: NonNullable<CustomerProfile["project"]> = { ...(profile.project ?? {}) };
+    // More specific substrate clues precede generic words like "parede".
     const surfaces: Array<[RegExp, string]> = [
-      [/\b(reboco|alvenaria|muro|parede|fachada|cimento)\b/, "alvenaria"],
+      [/\b(porta de madeira|janela de madeira|móvel|movel|madeira)\b/, "madeira"],
+      [/\b(azulejo|ceramica|cerâmica)\b/, "cerâmica/azulejo"],
+      [/\b(estrutura metalica|estrutura metálica|portao|portão|grade|metal|ferro)\b/, "metal"],
+      [/\b(piso|chao|chão|contrapiso)\b/, "piso"],
       [/\b(telhado|telha|telhas)\b/, "telhado/telha"],
       [/\b(laje|terraço|terraco)\b/, "laje/terraço"],
-      [/\b(piso|chao|chão|contrapiso)\b/, "piso"],
-      [/\b(madeira|porta de madeira|janela de madeira|móvel|movel)\b/, "madeira"],
-      [/\b(portao|portão|grade|metal|ferro|estrutura metalica|estrutura metálica)\b/, "metal"],
-      [/\b(azulejo|ceramica|cerâmica)\b/, "cerâmica/azulejo"]
+      [/\b(reboco|alvenaria|muro|parede|fachada|cimento)\b/, "alvenaria"]
     ];
-    for (const [pattern, value] of surfaces) if (pattern.test(n)) { p.surface = value; break; }
-    if (/\b(externo|externa|ao tempo|sol e chuva|pega sol|pega chuva|fachada)\b/.test(n)) p.environment = "external";
-    else if (/\b(interno|interna|dentro de casa|ambiente interno)\b/.test(n)) p.environment = "internal";
+    const detectedSurface = surfaces.find(([pattern]) => pattern.test(n));
+    if (detectedSurface) {
+      if (p.surface && p.surface !== detectedSurface[1]) p = { surface: detectedSurface[1] };
+      p.surface = detectedSurface[1];
+    }
     const lastAnswer = norm(userMessages.at(-1) ?? "");
     const previousQuestion = norm(recentTurns.at(-1)?.assistant ?? "");
-    if (/^(sim|isso|exatamente|pega|pega sim)$/.test(lastAnswer) && /pega sol e chuva|exposto ao sol e a chuva/.test(previousQuestion)) p.environment = "external";
-    else if (/^(nao|não|nao pega|nao pega nao)$/.test(lastAnswer) && /pega sol e chuva|exposto ao sol e a chuva/.test(previousQuestion)) p.environment = "covered";
+    const answeredEnvironmentQuestion = /pega sol e chuva|exposto ao sol e a chuva/.test(previousQuestion);
+    if (/^(nao|nao pega|nao pega nao)$/.test(lastAnswer) && answeredEnvironmentQuestion) p.environment = "covered";
+    else if (/^(sim|isso|exatamente|pega|pega sim)$/.test(lastAnswer) && answeredEnvironmentQuestion) p.environment = "external";
+    else if (/\b(nao pega sol|nao pega chuva|sem sol direto|nao fica exposto ao tempo|area coberta)\b/.test(n)) p.environment = "covered";
+    else if (/\b(externo|externa|ao tempo|sol e chuva|pega sol|pega chuva|fachada)\b/.test(n)) p.environment = "external";
+    else if (/\b(interno|interna|dentro de casa|ambiente interno)\b/.test(n)) p.environment = "internal";
     const conditions: Array<[RegExp, string]> = [
       [/\b(reboco cru|reboco novo|sem pintura|sem pintar)\b/, "reboco cru/novo"],
       [/\b(descascando|descascada|tinta soltando|descascamento)\b/, "pintura descascando"],
@@ -65,7 +77,9 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
     const finish = finishes.find((x) => n.includes(norm(x)));
     if (finish) p.desiredFinish = finish;
     const colors = ["branco", "preto", "prata", "cinza", "azul", "verde", "amarelo", "vermelho", "bege", "palha", "camurca", "marrom", "rosa", "roxo", "dourado"];
-    const color = colors.find((x) => new RegExp("\\b" + x + "\\b").test(n));
+    const color = colors
+      .filter((x) => new RegExp("\\b" + x + "\\b").test(n) && !new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+" + x + "\\b").test(n))
+      .sort((a, b) => n.lastIndexOf(b) - n.lastIndexOf(a))[0];
     if (color) p.desiredColor = color;
     const problems: Array<[RegExp, string]> = [
       [/\b(infiltracao|infiltração|goteira|vazamento)\b/, "infiltração/vazamento"],
@@ -181,7 +195,7 @@ async function facts(db: SupabaseClient, question: string): Promise<Knowledge[]>
     const all = norm(title + " " + content);
     const titleNorm = norm(title);
     const score = words.reduce((sum, word) => sum + (titleNorm.includes(word) ? 5 : all.includes(word) ? 1 : 0), 0);
-    return { title, content: content.slice(0, 520), score };
+    return { title, content: content.slice(0, 950), score };
   }).filter((r: any) => r.score > 0)
     .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 4).map(({ title, content }: Knowledge) => ({ title, content }));
@@ -441,7 +455,7 @@ export async function answerCustomer(
   const key = process.env.NVIDIA_API_KEY;
   if (!key || !needsModel) {
     const knowledge = await facts(db, q);
-    return { reply: fallback(q, products, knowledge, recent), mode: key ? "rules_fast_path" : "rules", productsFound: products.length };
+    return { reply: fallback(q, products, knowledge, recent, customerProfile), mode: key ? "rules_fast_path" : "rules", productsFound: products.length };
   }
 
   const knowledge = await facts(db, q);
@@ -472,7 +486,7 @@ export async function answerCustomer(
     { role: "user", content: q }
   ];
   const tools = TOOL_DEFINITIONS.filter((tool) => tool.function.name !== "search_official_web" || Boolean(process.env.TAVILY_API_KEY));
-  const base = fallback(q, products, knowledge, recent);
+  const base = fallback(q, products, knowledge, recent, customerProfile);
   try {
     // Native thinking is enabled for complex consultation. Tool calls are executed by this server,
     // against the customer-safe catalog/articles and (when configured) official manufacturer sites.
