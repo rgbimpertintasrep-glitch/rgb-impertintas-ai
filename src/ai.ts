@@ -28,7 +28,7 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
     const n = norm(text);
     if (/\b(mais barato|o mais barato|menor preco|menor preço|mais economico|mais econômica|economizar|sem gastar muito|barat[oa])\b/.test(n)) profile.pricePriority = "lowest_price";
     else if (/\b(custo beneficio|custo-beneficio|equilibrio entre preco e qualidade|bom e barato|vale mais a pena)\b/.test(n)) profile.pricePriority = "cost_benefit";
-    else if (/\b(qualidade acima do preco|melhor qualidade|premium|mais duravel|mais resistente|nao importa o preco|não importa o preço)\b/.test(n)) profile.pricePriority = "quality";
+    else if (/\b(qualidade acima do preco|gosto de qualidade|qualidade e durabilidade|preco nao e o principal|melhor qualidade|premium|mais duravel|mais resistente|nao importa o preco|nao importa o preço)\b/.test(n)) profile.pricePriority = "quality";
     if (/\b(sou pintor|sou profissional|trabalho com pintura|pintor profissional|tenho experiencia com pintura)\b/.test(n)) profile.experienceLevel = "professional";
     else if (/\b(nunca pintei|nao entendo de pintura|sou leigo|sou iniciante|me explica simples|nao entendo disso)\b/.test(n)) profile.experienceLevel = "beginner";
     if (/\b(prefiro|minha marca|gosto mais da marca|so compro|só compro|quero especificamente|quero da marca)\b/.test(n)) {
