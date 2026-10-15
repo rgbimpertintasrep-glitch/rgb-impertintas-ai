@@ -167,6 +167,10 @@ export function isExplicitPriceQuestion(question: string): boolean {
   const n = norm(question);
   return /\b(preco|precos|quanto custa|quanto fica|quanto sai|qual(?: e)?(?: o)? valor|valor (?:do|da|de)|me (?:passa|fala|diz) (?:o )?(?:preco|valor)|valores)\b/.test(n);
 }
+export function shouldBlockUnrequestedPrice(question: string, response: string): boolean {
+  if (isExplicitPriceQuestion(question)) return false;
+  return /(?:R\$\s*\d|\b\d{1,6}[,.]\d{2}\s*(?:reais)?\b|\b(?:custa|sai por|fica por|valor de)\s+\d)/i.test(response);
+}
 const PRICE_QUERY_FILLER = new Set([
   "preco", "precos", "quanto", "custa", "custar", "fica", "sai", "qual", "valor", "valores",
   "me", "passa", "fala", "diz", "o", "a", "os", "as", "do", "da", "de", "dos", "das",
@@ -665,7 +669,7 @@ export async function answerCustomer(
   }
 
   // Compatibility guard takes precedence over product matching.
-  const guardedReply = consultativeGuard(q, recent);
+  const guardedReply = isExplicitPriceQuestion(q) ? null : consultativeGuard(q, recent);
   const userHistory = norm(recent.map((turn) => turn.user).join(" ") + " " + q);
   const needsOfficialMetallicCheck = Boolean(process.env.TAVILY_API_KEY) &&
     /\b(muro|parede|reboco|alvenaria|cimento|fachada)\b/.test(userHistory) &&
@@ -806,8 +810,7 @@ export async function answerCustomer(
       if (data?.choices?.[0]?.finish_reason === "length" || typeof generated !== "string" || !generated.trim()) return { reply: base, mode: "rules_fallback", productsFound: products.length };
       const customerVisible = generated.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
       if (!customerVisible) return { reply: base, mode: "rules_fallback", productsFound: products.length };
-      const monetaryClaim = /(?:R\$\s*\d|\b\d{1,6}[,.]\d{2}\s*(?:reais)?\b|\b(?:custa|sai por|fica por|valor de)\s+\d)/i.test(customerVisible);
-      if (!isExplicitPriceQuestion(q) && monetaryClaim) {
+      if (shouldBlockUnrequestedPrice(q, customerVisible)) {
         return { reply: base, mode: "price_output_blocked", productsFound: products.length };
       }
       return { reply: customerVisible.slice(0, 1200), mode: "nvidia_thinking_tools", productsFound: products.length };
