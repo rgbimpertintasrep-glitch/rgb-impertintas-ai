@@ -30,7 +30,7 @@ function safeCustomerProfile(value: unknown): CustomerProfile {
     for (const field of ["surface", "condition", "desiredColor", "desiredFinish", "problem"] as const) {
       if (typeof v.project[field] === "string") p[field] = v.project[field].slice(0, 80);
     }
-    if (v.project.environment === "internal" || v.project.environment === "external") p.environment = v.project.environment;
+    if (v.project.environment === "internal" || v.project.environment === "external" || v.project.environment === "covered") p.environment = v.project.environment;
     profile.project = p as CustomerProfile["project"];
   }
   return profile;
@@ -157,7 +157,7 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     const memoryKey = conversationHash("whatsapp", m.jid);
     const memory = await loadConversationMemory(db, memoryKey, "whatsapp");
     const recentTurns = memory.recentTurns;
-    const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), m.text]);
+    const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), m.text], recentTurns);
     const answer = await answerCustomer(db, m.text, recentTurns, customerProfile);
     const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade ao atendimento, mantemos um contexto curto das últimas mensagens por até 30 dias. Evite enviar senhas ou dados sensíveis.";
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
@@ -217,7 +217,7 @@ const server = createServer(async (req, res) => {
       const memoryKey = validSession ? conversationHash("web", sessionId) : null;
       const memory = memoryKey ? await loadConversationMemory(db, memoryKey, "web") : { recentTurns: [] as ConversationTurn[], customerProfile: {} as CustomerProfile };
       const recentTurns = memory.recentTurns;
-      const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), message]);
+      const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), message], recentTurns);
       const answer = await answerCustomer(db, message, recentTurns, customerProfile);
       if (memoryKey) await saveRecentTurns(db, memoryKey, "web", recentTurns, customerProfile, message, answer.reply);
       return json(res, 200, answer);
