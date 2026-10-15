@@ -270,7 +270,37 @@ function shouldUseModel(question: string, recent: ConversationTurn[]): boolean {
   const n = norm(question);
   const complex = /\b(qual melhor|qual e melhor|diferenca|compar(ar|e|acao)|como (usar|aplicar|preparar)|serve para|posso usar|e indicado|recomenda|rendimento|cobertura|quantos litros|calcular|estimar|infiltra|umidade|mofo|descasc|bolha|ferrugem|telhado|fachada|parede|madeira|metal|piso|passo a passo|o que voce sugere|me orienta|muro|prata|impermeabil)\b/.test(n);
   const followUp = recent.length > 0 && (/^\s*(e |mas |entao |nesse caso|nesse|nesse produto|e para|e se|isso|esse|essa|ele|ela|qual deles|o primeiro|o segundo|ja esta|esta pintado)/.test(n) || (n.length <= 80 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata)/.test(n)));
-  return complex || followUp;
+  const consultative = /\b(quero|queria|preciso|procuro|ajuda|me ajude|indica|recomenda|melhor|barato|economico|custo beneficio|duravel|resistente|resolver|pintar|reformar|impermeabilizar|proteger|qualidade|vale a pena|bom e barato)\b/.test(n);
+  if (isExactCatalogLookup(question) && !complex) return followUp;
+  return complex || followUp || consultative;
+}
+function isClearlyIncompatible(p: Product, profile: CustomerProfile): boolean {
+  const project = profile.project;
+  if (!project?.surface) return false;
+  const text = norm(p.name + " " + (p.brand ?? ""));
+  // Avoid the exact high-risk false matches seen in the live chat.
+  if (project.surface === "alvenaria") {
+    if (/\b(brocal|lazzudur|automotivo|base poliester|laca nitro|esmalte sintetico)\b/.test(text)) return true;
+  }
+  if (project.surface === "metal") {
+    if (/\b(tinta acrilica para parede|latex|massa corrida|massa acrilica|fundo preparador de parede)\b/.test(text)) return true;
+  }
+  if (project.surface === "madeira") {
+    if (/\b(tinta acrilica para parede|latex|massa corrida|massa acrilica|fundo preparador de parede)\b/.test(text)) return true;
+  }
+  if (project.surface === "piso") {
+    if (/\b(tinta acrilica para parede|latex|massa corrida|massa acrilica|tinta de teto)\b/.test(text)) return true;
+  }
+  return false;
+}
+function filterCompatibleCandidates(products: Product[], profile: CustomerProfile): Product[] {
+  return products.filter((product) => !isClearlyIncompatible(product, profile));
+}
+function isContextualFollowUp(question: string, recent: ConversationTurn[]): boolean {
+  const n = norm(question.trim());
+  return recent.length > 0 && (
+    n.length <= 100 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata|e |mas |entao |nesse|isso|esse|essa|ele|ela|ja esta|qual deles)/.test(n)
+  );
 }
 function productForCustomer(p: Product) {
   const price = chosenPrice(p);
@@ -345,7 +375,7 @@ async function webSearchOfficial(query: string): Promise<unknown> {
     return { available: false, reason: "Falha temporária na busca oficial; não presuma compatibilidade técnica." };
   }
 }
-async function executeTool(db: SupabaseClient, name: string, rawArgs: string): Promise<unknown> {
+async function executeTool(db: SupabaseClient, name: string, rawArgs: string, profile: CustomerProfile = {}): Promise<unknown> {
   let args: any;
   try { args = JSON.parse(rawArgs || "{}"); } catch { return { error: "Argumentos inválidos." }; }
   const query = String(args?.query ?? "").trim().slice(0, 180);
@@ -355,7 +385,7 @@ async function executeTool(db: SupabaseClient, name: string, rawArgs: string): P
     const batches = await Promise.all(queries.map((term: string) => searchProducts(db, term)));
     const unique = new Map<string, Product>();
     for (const product of batches.flat()) unique.set(product.erp_code, product);
-    return [...unique.values()].slice(0, 10).map(productForCustomer);
+    return filterCompatibleCandidates([...unique.values()], profile).slice(0, 10).map(productForCustomer);
   }
   if (name === "search_technical_knowledge") {
     const batches = await Promise.all(queries.map((term: string) => facts(db, term)));
@@ -390,13 +420,27 @@ export async function answerCustomer(
     /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade)\b/.test(userHistory);
   if (guardedReply && !needsOfficialMetallicCheck) return { reply: guardedReply, mode: "compatibility_guard", productsFound: 0 };
 
-  const products = await searchProducts(db, q);
+  let products = await searchProducts(db, q);
+  if (isContextualFollowUp(q, recent) && customerProfile.project?.surface) {
+    const surfaceQuery = [
+      customerProfile.project.surface === "alvenaria" ? "tinta acrílica para alvenaria" : customerProfile.project.surface,
+      customerProfile.project.environment === "external" ? "externa" : customerProfile.project.environment === "internal" ? "interna" : "",
+      customerProfile.project.desiredColor ?? "",
+      customerProfile.project.desiredFinish ?? ""
+    ].filter(Boolean).join(" ");
+    if (surfaceQuery) {
+      const contextualProducts = await searchProducts(db, surfaceQuery);
+      const combined = new Map<string, Product>();
+      for (const product of [...products, ...contextualProducts]) combined.set(product.erp_code, product);
+      products = [...combined.values()].slice(0, 12);
+    }
+  }
   const directBrandReply = brandAvailabilityReply(q, products);
   if (directBrandReply) return { reply: directBrandReply, mode: "catalog_brand", productsFound: products.length };
   const needsModel = shouldUseModel(q, recent);
   const key = process.env.NVIDIA_API_KEY;
   if (!key || !needsModel) {
-    const knowledge = !products.length ? await facts(db, q) : [];
+    const knowledge = await facts(db, q);
     return { reply: fallback(q, products, knowledge, recent), mode: key ? "rules_fast_path" : "rules", productsFound: products.length };
   }
 
@@ -405,7 +449,7 @@ export async function answerCustomer(
     store: { name: STORE.name, whatsapp: STORE.whatsapp, position: STORE.position },
     recent_conversation: recent.slice(-3),
     current_customer_message: q,
-    candidate_products: products.slice(0, 5).map(productForCustomer),
+    candidate_products: filterCompatibleCandidates(products, customerProfile).slice(0, 5).map(productForCustomer),
     internal_technical_articles: knowledge,
     customer_profile: customerProfile,
     operating_rules: [
@@ -466,7 +510,7 @@ export async function answerCustomer(
             messages.push({ role: "tool", tool_call_id: String(call.id ?? ""), content: JSON.stringify({ error: "Ferramenta não permitida." }) });
             continue;
           }
-          const result = await executeTool(db, name, String(call?.function?.arguments ?? "{}"));
+          const result = await executeTool(db, name, String(call?.function?.arguments ?? "{}"), customerProfile);
           messages.push({ role: "tool", tool_call_id: String(call.id ?? ""), content: JSON.stringify(result).slice(0, 5500) });
         }
         continue;
