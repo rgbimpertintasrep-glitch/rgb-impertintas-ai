@@ -89,17 +89,17 @@ export function brandAvailabilityReply(question: string, products: Product[]): s
     "Você procura tinta para parede, esmalte, resina ou outro produto?";
 }
 async function facts(db: SupabaseClient, question: string): Promise<Array<{ title: string; content: string }>> {
-  const { data, error } = await db.from("knowledge_articles")
-    .select("title,content").eq("active", true).eq("visibility", "public").limit(12);
+  const { data, error } = await db.from("knowledge_articles").select("title,content").eq("active", true).eq("visibility", "public").limit(12);
   if (error) return [];
   const words = terms(question);
-  return (data ?? []).map((row: any) => {
-    const title = String(row.title ?? "").slice(0, 160);
-    const content = String(row.content ?? "");
-    const searchText = norm(title + " " + content);
-    const score = words.reduce((sum, word) => sum + (norm(title).includes(word) ? 4 : searchText.includes(word) ? 1 : 0), 0);
+  return (data ?? []).map((r: any) => {
+    const title = String(r.title ?? "").slice(0, 140);
+    const content = String(r.content ?? "");
+    const all = norm(title + " " + content);
+    const titleNorm = norm(title);
+    const score = words.reduce((sum, word) => sum + (titleNorm.includes(word) ? 4 : all.includes(word) ? 1 : 0), 0);
     return { title, content: content.slice(0, 520), score };
-  }).filter((row: any) => row.score > 0)
+  }).filter((r: any) => r.score > 0)
     .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 3)
     .map(({ title, content }: { title: string; content: string }) => ({ title, content }));
