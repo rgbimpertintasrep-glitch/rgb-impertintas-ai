@@ -77,10 +77,13 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
     const finish = finishes.find((x) => n.includes(norm(x)));
     if (finish) p.desiredFinish = finish;
     const colors = ["branco", "preto", "prata", "cinza", "azul", "verde", "amarelo", "vermelho", "bege", "palha", "camurca", "marrom", "rosa", "roxo", "dourado"];
-    const color = colors
-      .filter((x) => new RegExp("\\b" + x + "\\b").test(n) && !new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+" + x + "\\b").test(n))
-      .sort((a, b) => n.lastIndexOf(b) - n.lastIndexOf(a))[0];
-    if (color) p.desiredColor = color;
+    if (/\bcinza[- ]prata\b/.test(n)) p.desiredColor = "cinza-prata";
+    else {
+      const color = colors
+        .filter((x) => new RegExp("\\b" + x + "\\b").test(n) && !new RegExp("\\b(nao quero|nao gosto de|sem|evitar|evite)\\s+" + x + "\\b").test(n))
+        .sort((a, b) => n.lastIndexOf(b) - n.lastIndexOf(a))[0];
+      if (color) p.desiredColor = color;
+    }
     const problems: Array<[RegExp, string]> = [
       [/\b(infiltracao|infiltração|goteira|vazamento)\b/, "infiltração/vazamento"],
       [/\b(mofo|fungo|bolor)\b/, "mofo/bolor"],
@@ -286,8 +289,17 @@ async function facts(db: SupabaseClient, question: string): Promise<Knowledge[]>
  * It uses the recent turns so the clarification remains meaningful on follow-ups.
  */
 export function consultativeGuard(question: string, recentTurns: ConversationTurn[] = []): string | null {
-  const history = recentTurns.slice(-3).map((turn) => turn.user).join(" ");
+  const recent = recentTurns.slice(-3);
+  const history = recent.map((turn) => turn.user).join(" ");
   const all = norm(history + " " + question);
+  const lastAssistant = norm(recent.at(-1)?.assistant ?? "");
+  const currentAnswer = norm(question.trim());
+  const shortYes = /^(sim|isso|exatamente|sim pode|pode|pode ser|o primeiro|o segundo)$/.test(currentAnswer);
+  const answeringEnvironmentQuestion = /pega sol e chuva|exposto ao sol e a chuva/.test(lastAssistant) && shortYes;
+  const answeringStyleQuestion = /efeito prata metalico.*ou.*cinza.prata comum/.test(lastAssistant) && shortYes;
+  if (answeringStyleQuestion) {
+    return "Só para eu não entender errado: você quer o prata metálico brilhante ou o cinza-prata comum, sem efeito metálico?";
+  }
   const masonry = /\b(muro|parede|reboco|alvenaria|cimento|fachada)\b/.test(all);
   const silver = /\b(prata|prateado|prateada|cinza prata|metalico|metalica)\b/.test(all);
   const advicePattern = /\b(pintar|pintura|tinta|recomenda|indica|qual|quero|preciso|serve|posso usar|melhor|efeito)\b/;
@@ -305,7 +317,7 @@ export function consultativeGuard(question: string, recentTurns: ConversationTur
     return "Mesmo sabendo a condição do muro, só é seguro indicar um efeito prata metálico depois de confirmar uma ficha técnica que aprove o uso em alvenaria. Esmalte para metal e tinta automotiva não são substitutos automáticos; a equipe precisa confirmar o sistema correto com o fabricante."; 
   }
   const plainGrey = /\b(so um tom cinza|cinza prata comum|cinza-prata comum|sem efeito metalico|nao quero metalico)\b/.test(all);
-  const environmentAnswered = /\b(sol|chuva|externo|externa|interno|interna|exposto|coberto)\b/.test(all);
+  const environmentAnswered = answeringEnvironmentQuestion || /\b(sol|chuva|externo|externa|interno|interna|exposto|coberto)\b/.test(all);
   if (plainGrey && !environmentAnswered) {
     return "Se você quer só um cinza-prata, sem brilho metálico, o caminho é uma tinta acrílica própria para parede; para muro exposto ao tempo, precisa ser indicada para área externa. A cor exata precisa ser confirmada no catálogo/tintometria da loja. Esse muro pega sol e chuva?";
   }
