@@ -46,7 +46,7 @@
 - [x] Os dados de produtos enviados ao modelo não contêm preço. Perguntas de preço passam por uma função determinística que utiliza o catálogo; o modelo não é a fonte do número. Um filtro também bloqueia afirmações monetárias não solicitadas na resposta generativa.
 - [x] CI passou em typecheck, testes e build para o commit `83ac635`; commits posteriores de aviso de privacidade e documentação também passaram no CI.
 - [x] Deploy anterior do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
-- [ ] Publicar as correções recentes de contexto/preço num novo deploy do Render e verificar que o commit mais recente está `live` antes de considerar a webchat corrigida.
+- [x] Correções recentes de contexto/preço publicadas no Render: deploy `dep-db8isimq1p3s73dh1hr0`, commit `6817ef39f9beddbfef1b313436512a4fcbfb4ba7`, estado `live` às 19:49 UTC. Typecheck, testes automatizados e build passaram na CI.
 - [ ] Fazer um teste funcional depois do deploy: mensagens de correção, mudança de assunto e pedido de preço explícito na mesma janela. CI passou, mas o chat web ainda não foi verificado por meio de uma conversa HTTP ponta a ponta.
 - [ ] Confirmar `NVIDIA_API_KEY` no Render e se o modelo está efetivamente respondendo, em vez de fallback determinístico.
 - [ ] Configurar `TAVILY_API_KEY` no Render se quiser pesquisa online de fichas técnicas de fabricantes; ela ainda não foi ativada/testada.
