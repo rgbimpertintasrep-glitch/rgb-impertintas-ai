@@ -114,11 +114,12 @@ async function facts(db: SupabaseClient, question: string): Promise<Knowledge[]>
  * It uses the recent turns so the clarification remains meaningful on follow-ups.
  */
 export function consultativeGuard(question: string, recentTurns: ConversationTurn[] = []): string | null {
-  const history = recentTurns.slice(-3).map((turn) => turn.user + " " + turn.assistant).join(" ");
+  const history = recentTurns.slice(-3).map((turn) => turn.user).join(" ");
   const all = norm(history + " " + question);
   const masonry = /\b(muro|parede|reboco|alvenaria|cimento|fachada)\b/.test(all);
   const silver = /\b(prata|prateado|prateada|cinza prata|metalico|metalica)\b/.test(all);
-  const adviceIntent = /\b(pintar|pintura|tinta|recomenda|indica|qual|quero|preciso|serve|posso usar|melhor|efeito)\b/.test(norm(question));
+  const advicePattern = /\b(pintar|pintura|tinta|recomenda|indica|qual|quero|preciso|serve|posso usar|melhor|efeito)\b/;
+  const adviceIntent = advicePattern.test(norm(question)) || advicePattern.test(norm(history));
   if (!masonry || !silver || !adviceIntent) return null;
 
   const alreadyClarified = /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade|so um tom cinza|cinza prata comum|cinza-prata comum)\b/.test(all);
@@ -128,6 +129,11 @@ export function consultativeGuard(question: string, recentTurns: ConversationTur
   const confirmedMetallic = /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade)\b/.test(all);
   if (confirmedMetallic) {
     return "Entendi: você quer o efeito prata metálico no muro. No cadastro aparecem produtos prateados de outras linhas, mas o nome não comprova que sejam próprios para reboco/cimento; não vou te indicar um produto incompatível só para passar um preço. O muro já está pintado ou está no reboco cru?";
+  }
+  const plainGrey = /\b(so um tom cinza|cinza prata comum|cinza-prata comum|sem efeito metalico|nao quero metalico)\b/.test(all);
+  const environmentAnswered = /\b(sol|chuva|externo|externa|interno|interna|exposto|coberto)\b/.test(all);
+  if (plainGrey && !environmentAnswered) {
+    return "Se você quer só um cinza-prata, sem brilho metálico, o caminho é uma tinta acrílica própria para parede; para muro exposto ao tempo, precisa ser indicada para área externa. A cor exata precisa ser confirmada no catálogo/tintometria da loja. Esse muro pega sol e chuva?";
   }
   return null;
 }
@@ -166,7 +172,7 @@ function fallback(q: string, products: Product[], knowledge: Knowledge[], recent
 function shouldUseModel(question: string, recent: ConversationTurn[]): boolean {
   const n = norm(question);
   const complex = /\b(qual melhor|qual e melhor|diferenca|compar(ar|e|acao)|como (usar|aplicar|preparar)|serve para|posso usar|e indicado|recomenda|rendimento|cobertura|quantos litros|calcular|estimar|infiltra|umidade|mofo|descasc|bolha|ferrugem|telhado|fachada|parede|madeira|metal|piso|passo a passo|o que voce sugere|me orienta|muro|prata|impermeabil)\b/.test(n);
-  const followUp = recent.length > 0 && /^\s*(e |mas |entao |nesse caso|nesse|nesse produto|e para|e se|isso|esse|essa|ele|ela|qual deles|o primeiro|o segundo|ja esta|esta pintado)/.test(n);
+  const followUp = recent.length > 0 && (/^\s*(e |mas |entao |nesse caso|nesse|nesse produto|e para|e se|isso|esse|essa|ele|ela|qual deles|o primeiro|o segundo|ja esta|esta pintado)/.test(n) || (n.length <= 80 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata)/.test(n)));
   return complex || followUp;
 }
 function productForCustomer(p: Product) {
