@@ -65,7 +65,7 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
       let score = 0;
       for (const term of words) {
         if (brand === term) score += 12;
-        else if (brand.split(/\\s+/).includes(term)) score += 9;
+        else if (brand.split(/\s+/).includes(term)) score += 9;
         else if (brand.includes(term)) score += 6;
         if (name.includes(term)) score += 3;
         if (category.includes(term)) score += 1;
@@ -82,7 +82,7 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
 }
 export function brandAvailabilityReply(question: string, products: Product[]): string | null {
   const n = norm(question);
-  if (!/\\b(tem|temos|trabalha|trabalham|vende|vendem|possui|disponivel|disponiveis)\\b/.test(n)) return null;
+  if (!/\b(tem|temos|trabalha|trabalham|vende|vendem|possui|disponivel|disponiveis)\b/.test(n)) return null;
   const words = terms(question);
   const brandToken = words
     .filter((word) => products.some((p) => norm(p.brand ?? "").includes(word)))
@@ -90,7 +90,7 @@ export function brandAvailabilityReply(question: string, products: Product[]): s
   if (!brandToken) return null;
   const product = products.find((p) => norm(p.brand ?? "").includes(brandToken) && p.brand);
   if (!product?.brand) return null;
-  const displayBrand = product.brand.toLowerCase().replace(/(^|\\s)\\p{L}/gu, (v) => v.toUpperCase());
+  const displayBrand = product.brand.toLowerCase().replace(/(^|\s)\p{L}/gu, (v) => v.toUpperCase());
   return "Temos produtos da marca " + displayBrand +
     " cadastrados no catálogo. O saldo disponível precisa ser confirmado pela equipe. " +
     "Você procura tinta para parede, esmalte, resina ou outro produto?";
