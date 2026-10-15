@@ -394,9 +394,9 @@ const TOOL_DEFINITIONS: any[] = [
   }
 ];
 const OFFICIAL_DOMAINS = [
-  "suvinil.com.br", "loja.suvinil.com.br", "coral.com.br", "sherwin.com.br", "sherwin-auto.com.br",
-  "luztol.com.br", "loja.luztol.com.br", "maxvinil.com.br", "leinertex.com.br",
-  "rhodopas.com.br", "vedacit.com.br", "sika.com", "viapol.com.br", "weber.com.br"
+  "suvinil.com.br", "loja.suvinil.com.br", "coral.com.br", "tintascoral.com.br", "sherwin.com.br", "sherwin-auto.com.br",
+  "luztol.com.br", "loja.luztol.com.br", "maxvinil.com.br", "leinertex.com.br", "colatexdobrasil.com.br",
+  "rendcolor.com.br", "rhodopas.com.br", "vedacit.com.br", "sika.com", "viapol.com.br", "weber.com.br"
 ];
 async function webSearchOfficial(query: string): Promise<unknown> {
   const apiKey = process.env.TAVILY_API_KEY;
@@ -404,9 +404,8 @@ async function webSearchOfficial(query: string): Promise<unknown> {
   try {
     const response = await fetch("https://api.tavily.com/search", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", Authorization: "Bearer " + apiKey },
       body: JSON.stringify({
-        api_key: apiKey,
         query: String(query).slice(0, 220) + " (ficha técnica OR boletim técnico OR manual de aplicação)",
         topic: "general",
         search_depth: "basic",
@@ -533,22 +532,36 @@ export async function answerCustomer(
     // Native thinking is enabled for complex consultation. Tool calls are executed by this server,
     // against the customer-safe catalog/articles and (when configured) official manufacturer sites.
     for (let round = 0; round < 3; round++) {
-      const response = await fetch(process.env.NVIDIA_API_URL || "https://integrate.api.nvidia.com/v1/chat/completions", {
+      const endpoint = process.env.NVIDIA_API_URL || "https://integrate.api.nvidia.com/v1/chat/completions";
+      const requestBody: Record<string, unknown> = {
+        model: process.env.NVIDIA_MODEL || "nvidia/nemotron-3.5-lightning-30b-a3b",
+        messages,
+        tools,
+        tool_choice: "auto",
+        temperature: 0.2,
+        max_tokens: 1400,
+        stream: false,
+        chat_template_kwargs: { enable_thinking: true },
+        thinking_token_budget: 500
+      };
+      let response = await fetch(endpoint, {
         method: "POST",
         headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: process.env.NVIDIA_MODEL || "nvidia/nemotron-3.5-lightning-30b-a3b",
-          messages,
-          tools,
-          tool_choice: "auto",
-          temperature: 0.2,
-          max_tokens: 1400,
-          stream: false,
-          chat_template_kwargs: { enable_thinking: true },
-          thinking_token_budget: 500
-        }),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(18000)
       });
+      // If the hosted endpoint rejects tool schemas, retry once as a thinking-only completion.
+      // Do not retry authentication, quota, or server errors.
+      if ((response.status === 400 || response.status === 422) && tools.length > 0) {
+        requestBody.tools = undefined;
+        requestBody.tool_choice = undefined;
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(18000)
+        });
+      }
       if (!response.ok) return { reply: base, mode: "rules_fallback", productsFound: products.length };
       const data: any = await response.json();
       const message = data?.choices?.[0]?.message;
