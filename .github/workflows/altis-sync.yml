@@ -16,10 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Connect private Tailscale network
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           authkey: \${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: rgb-altis-sync
+          args: --accept-routes
       - name: Check required secrets
         shell: bash
         env:
