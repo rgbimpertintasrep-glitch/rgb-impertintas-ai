@@ -25,14 +25,16 @@ function no(v: unknown): boolean {
   return v === false || v === 0 || (typeof v === "string" && ["N", "NAO", "NÃO", "FALSE", "0", "NO"].includes(v.trim().toUpperCase()));
 }
 function inferCategory(name: string): string {
-  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (/\b(tinta|esmalte|latex|acrilic|verniz|stain|selador|fundo preparador|primer|zarcao)\b/.test(n)) return "Tintas e complementos";
-  if (/\b(massa|gesso|argamassa|rejunte|cimento|cal hidratada)\b/.test(n)) return "Massas e preparação";
-  if (/\b(impermeabil|manta liquida|vedacit|rhodopas|silicone|pu 40|selante)\b/.test(n)) return "Impermeabilização e vedação";
-  if (/\b(lixa|lixamento|abrasiv)\b/.test(n)) return "Lixas e abrasivos";
-  if (/\b(rolo|pincel|trincha|broxa|espatula|desempenadeira|bandeja|fita crepe|prolongador)\b/.test(n)) return "Ferramentas de pintura";
-  if (/\b(thinner|solvente|aguarras|removedor|diluente)\b/.test(n)) return "Solventes e limpeza";
-  if (/\b(luva|mascara|oculos|respirador|epi)\b/.test(n)) return "Proteção e EPI";
+  const n = name.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+  // Textured wall coatings are their own practical category, not generic "other".
+  if (/(textura|grafiato|rustico graf|textuacril|textucril)/.test(n)) return "Texturas e revestimentos";
+  if (/(impermeabil|manta liquida|rhodop|rhopdop|am712|vedacit|sikatop|silicone|pu ?40|selante|borracha liquida|pintura asfaltica|asfaltico|hidrorepel)/.test(n)) return "Impermeabilização e vedação";
+  if (/(\\b(lixa|lixamento|abrasiv)\\b)/.test(n)) return "Lixas e abrasivos";
+  if (/(\\b(rolo|pincel|trincha|broxa|espatula|desempenadeira|bandeja|prolongador|aplicador|pistola|banqueta|tampa pra tinta|fita crepe)\\b)/.test(n)) return "Ferramentas de pintura";
+  if (/(\\b(thinner|solvente|aguarras|removedor|diluente)\\b|aguarr|aguarras)/.test(n)) return "Solventes e limpeza";
+  if (/(\\b(massa|gesso|argamassa|rejunte|cimento|cal hidratada)\\b|massa rapida)/.test(n)) return "Massas e preparação";
+  if (/(\\b(tinta|esmalte|latex|verniz|stain|selador|primer|zarcao)\\b|acril|\\bacr\\b|fundo preparador|resina|spray|pintamax|base .*\\b(acr|esmalte|latex)\\b)/.test(n)) return "Tintas e complementos";
+  if (/(\\b(luva|mascara|oculos|respirador|epi)\\b)/.test(n)) return "Proteção e EPI";
   return "Outros materiais";
 }
 
