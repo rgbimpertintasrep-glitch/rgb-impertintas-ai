@@ -178,7 +178,13 @@ const server = createServer(async (req, res) => {
     try {
       const b = await bodyJson(req), message = String(b?.message ?? "").trim().slice(0, 1200);
       if (!message) return json(res, 400, { error: "Digite uma mensagem." });
-      return json(res, 200, await answerCustomer(db, message));
+      const sessionId = String(b?.sessionId ?? "").trim().slice(0, 100);
+      const validSession = sessionId.length >= 16 && /^[A-Za-z0-9_-]+$/.test(sessionId);
+      const memoryKey = validSession ? conversationHash("web", sessionId) : null;
+      const recentTurns = memoryKey ? await loadRecentTurns(db, memoryKey, "web") : [];
+      const answer = await answerCustomer(db, message, recentTurns);
+      if (memoryKey) await saveRecentTurns(db, memoryKey, "web", recentTurns, message, answer.reply);
+      return json(res, 200, answer);
     } catch (e) { return json(res, 400, { error: e instanceof Error ? e.message.slice(0, 180) : "Falha ao processar." }); }
   }
   if (path.startsWith("/api/altis/")) {
