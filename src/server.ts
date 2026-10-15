@@ -13,12 +13,18 @@ const db: SupabaseClient | null = url && key ? createClient(url, key, { auth: { 
 const limits = new Map<string, { since: number; count: number }>();
 const MAX_BODY = 40 * 1024 * 1024;
 const MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+let lastMemoryPruneAt = 0;
 function conversationHash(channel: "web" | "whatsapp", identity: string): string {
   const secret = process.env.SYNC_ADMIN_TOKEN || process.env.EVOLUTION_WEBHOOK_TOKEN || key || url;
   return createHmac("sha256", secret).update(channel + ":" + identity).digest("hex");
 }
 async function loadRecentTurns(db: SupabaseClient, sessionHash: string, channel: "web" | "whatsapp"): Promise<ConversationTurn[]> {
   try {
+    const now = Date.now();
+    if (now - lastMemoryPruneAt > 6 * 60 * 60 * 1000) {
+      lastMemoryPruneAt = now;
+      await db.from("rgb_conversation_memory").delete().lt("expires_at", new Date(now).toISOString());
+    }
     const { data, error } = await db.from("rgb_conversation_memory")
       .select("recent_turns")
       .eq("session_key_hash", sessionHash)
