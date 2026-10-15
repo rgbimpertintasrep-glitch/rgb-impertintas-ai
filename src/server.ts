@@ -130,16 +130,21 @@ const server = createServer(async (req, res) => {
     if (method === "POST" && (path === "/api/altis/import" || path === "/api/altis/pull")) {
       try {
         let payload: unknown;
+        let submittedOptions: any = {};
         if (path.endsWith("/pull")) payload = await pullAltisJson();
         else {
           const b = await bodyJson(req);
           payload = b && Object.prototype.hasOwnProperty.call(b, "payload") ? b.payload : b;
+          submittedOptions = b?.options && typeof b.options === "object" ? b.options : {};
         }
-        const stockField = process.env.ALTIS_STOCK_FIELD || "";
-        if (stockField && !isStockField(stockField)) return json(res, 500, { error: "ALTIS_STOCK_FIELD inválido." });
+        const stockField = String(submittedOptions.stockField ?? process.env.ALTIS_STOCK_FIELD ?? "");
+        if (stockField && !isStockField(stockField)) return json(res, 400, { error: "ALTIS_STOCK_FIELD inválido." });
+        const fullSnapshot = typeof submittedOptions.fullSnapshot === "boolean"
+          ? submittedOptions.fullSnapshot
+          : process.env.ALTIS_EXPORT_IS_FULL_SNAPSHOT === "true";
         const result = await syncAltisPayload(db, payload, {
           stockField, maxProducts: Number(process.env.ALTIS_MAX_PRODUCTS || 5000),
-          fullSnapshot: process.env.ALTIS_EXPORT_IS_FULL_SNAPSHOT === "true",
+          fullSnapshot,
           source: path.endsWith("/pull") ? "http_altis_pull" : "manual_json"
         });
         return json(res, 200, { ok: true, ...result });
