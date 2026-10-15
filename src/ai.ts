@@ -8,7 +8,7 @@ export type CustomerProfile = {
   experienceLevel?: "professional" | "beginner" | "unspecified";
   project?: {
     surface?: string;
-    environment?: "internal" | "external";
+    environment?: "internal" | "external" | "covered";
     condition?: string;
     desiredColor?: string;
     desiredFinish?: string;
@@ -17,7 +17,7 @@ export type CustomerProfile = {
 };
 const KNOWN_BRANDS = ["maxvinil", "luztol", "leinertex", "colatex", "sherwin-williams", "suvinil", "coral", "rhodopas", "vedacit", "sika", "rendcolor", "rendcril", "kolore"];
 /** Saves only explicit buying preferences and the current project facts, never sensitive personal data. */
-export function updateCustomerProfile(existing: CustomerProfile = {}, userMessages: string[]): CustomerProfile {
+export function updateCustomerProfile(existing: CustomerProfile = {}, userMessages: string[], recentTurns: ConversationTurn[] = []): CustomerProfile {
   const profile: CustomerProfile = {
     ...existing,
     preferredBrands: [...new Set((existing.preferredBrands ?? []).slice(0, 5))],
@@ -48,6 +48,10 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
     for (const [pattern, value] of surfaces) if (pattern.test(n)) { p.surface = value; break; }
     if (/\b(externo|externa|ao tempo|sol e chuva|pega sol|pega chuva|fachada)\b/.test(n)) p.environment = "external";
     else if (/\b(interno|interna|dentro de casa|ambiente interno)\b/.test(n)) p.environment = "internal";
+    const lastAnswer = norm(userMessages.at(-1) ?? "");
+    const previousQuestion = norm(recentTurns.at(-1)?.assistant ?? "");
+    if (/^(sim|isso|exatamente|pega|pega sim)$/.test(lastAnswer) && /pega sol e chuva|exposto ao sol e a chuva/.test(previousQuestion)) p.environment = "external";
+    else if (/^(nao|não|nao pega|nao pega nao)$/.test(lastAnswer) && /pega sol e chuva|exposto ao sol e a chuva/.test(previousQuestion)) p.environment = "covered";
     const conditions: Array<[RegExp, string]> = [
       [/\b(reboco cru|reboco novo|sem pintura|sem pintar)\b/, "reboco cru/novo"],
       [/\b(descascando|descascada|tinta soltando|descascamento)\b/, "pintura descascando"],
@@ -220,7 +224,7 @@ function isExactCatalogLookup(q: string): boolean {
   return /\b(preco|quanto custa|valor|tem|temos|vende|vendem|disponivel|disponibilidade)\b/.test(n) &&
     !/\b(recomenda|indica|qual tinta|qual produto|o que uso|o que eu uso|serve para|posso usar|como pintar)\b/.test(n);
 }
-function fallback(q: string, products: Product[], knowledge: Knowledge[], recent: ConversationTurn[] = []): string {
+function fallback(q: string, products: Product[], knowledge: Knowledge[], recent: ConversationTurn[] = [], profile: CustomerProfile = {}): string {
   const n = norm(q);
   if (/^(oi|ola|bom dia|boa tarde|boa noite|opa|tudo bem)[!. ]*$/.test(n))
     return "Olá! Sou o assistente da RGB. O que você vai pintar, reformar ou impermeabilizar?";
@@ -237,15 +241,30 @@ function fallback(q: string, products: Product[], knowledge: Knowledge[], recent
     });
     return list.join("\n") + "\n\nEsse saldo só aparece quando foi validado recentemente.";
   }
-  const latest = recent.at(-1);
-  const nRecent = latest ? norm(latest.user + " " + latest.assistant) : "";
-  if (/\b(infiltracao|infiltra|umidade|mofo|goteira|vazamento)\b/.test(n + " " + nRecent))
-    return "Antes de escolher o impermeabilizante, preciso identificar a origem da água. Está entrando pelo telhado/laje, pela parede ou vem do chão?";
-  if (/\b(muro|parede|reboco|fachada)\b/.test(n))
-    return "Para indicar a tinta certa, preciso saber só uma coisa primeiro: esse muro/parede fica exposto ao sol e à chuva ou é uma área interna?";
+  const customerHistory = norm([...recent.map((turn) => turn.user), q].join(" "));
+  const project = profile.project ?? {};
+  if (/\b(infiltracao|infiltra|umidade|mofo|goteira|vazamento)\b/.test(customerHistory))
+    return "Antes de escolher o impermeabilizante, preciso identificar de onde vem a água: telhado/laje, parede ou chão? Isso muda o produto certo.";
+  if (/\b(muro|parede|reboco|fachada|alvenaria|cimento)\b/.test(customerHistory)) {
+    const outside = project.environment === "external" || /\b(externo|externa|ao tempo|sol e chuva|pega sol)\b/.test(customerHistory);
+    const covered = project.environment === "covered";
+    const inside = project.environment === "internal" || /\b(interno|interna|dentro de casa)\b/.test(customerHistory);
+    const plainColor = /\b(cinza prata comum|cinza-prata comum|so um tom cinza|sem efeito metalico|nao quero metalico)\b/.test(customerHistory);
+    if (plainColor && outside)
+      return "Como é um muro externo e você quer cinza-prata comum, procure tinta acrílica própria para alvenaria externa. Não vou afirmar que temos a cor exata sem confirmar a cartela; posso procurar o tom mais próximo disponível. O muro está no reboco cru ou já tem pintura?";
+    if (plainColor && covered)
+      return "Para esse muro coberto, o caminho é uma tinta própria para alvenaria; a cor cinza-prata exata precisa ser conferida na cartela. O muro está no reboco cru ou já tem pintura?";
+    if (outside)
+      return "Para muro exposto ao sol e à chuva, a família adequada costuma ser tinta acrílica indicada para área externa — não esmalte metálico ou tinta automotiva só pela cor. O muro está no reboco cru, já pintado ou descascando?";
+    if (inside)
+      return "Para parede de alvenaria interna, a escolha deve ser uma tinta própria para parede. O que já existe na superfície: reboco cru, pintura em bom estado ou tinta descascando?";
+    if (covered)
+      return "Como o muro não pega sol e chuva diretamente, podemos avaliar tinta própria para alvenaria conforme a condição da superfície. Está no reboco cru ou já pintado?";
+    return "Para indicar o produto certo para alvenaria, preciso confirmar: esse muro fica exposto ao sol e à chuva ou é uma área interna?";
+  }
   const relevant = knowledge[0];
-  if (relevant && !products.length) return relevant.content.slice(0, 700);
-  return "Vamos escolher pelo uso, não só pelo nome do produto. O que você vai pintar ou consertar, e em que superfície?";
+  if (relevant) return relevant.content.slice(0, 700);
+  return "Quero te indicar algo adequado, não só listar produtos. Me diga qual superfície vai trabalhar e o que você quer resolver.";
 }
 function shouldUseModel(question: string, recent: ConversationTurn[]): boolean {
   const n = norm(question);
