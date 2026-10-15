@@ -379,11 +379,16 @@ async function facts(db: SupabaseClient, question: string): Promise<Knowledge[]>
 export function consultativeGuard(question: string, recentTurns: ConversationTurn[] = []): string | null {
   const recent = recentTurns.slice(-3);
   const history = recent.map((turn) => turn.user).join(" ");
-  const all = norm(history + " " + question);
   const lastAssistant = norm(recent.at(-1)?.assistant ?? "");
   const currentAnswer = norm(question.trim());
+  const currentHasPaintTopic = /\b(muro|parede|reboco|alvenaria|cimento|fachada|prata|prateado|prateada|cinza prata|metalico|metalica)\b/.test(currentAnswer);
+  const shortAnswerToRelevantQuestion = /^(sim|nao|não|isso|exatamente|pega sol|pega chuva|interno|interna|externo|externa|so quero|só quero|so um|só um|apenas um|cinza|prata|o primeiro|o segundo)/.test(currentAnswer) &&
+    /pega sol e chuva|exposto ao sol e a chuva|efeito prata metalico|cinza.prata comum/.test(lastAssistant);
+  // Unrelated new requests no longer inherit the wall/silver diagnosis from old turns.
+  const useHistory = currentHasPaintTopic || shortAnswerToRelevantQuestion;
+  const all = norm((useHistory ? history + " " : "") + question);
   const shortYes = /^(sim|isso|exatamente|sim pode|pode|pode ser|o primeiro|o segundo)$/.test(currentAnswer);
-  const shortYesNo = /^(sim|isso|exatamente|nao|nao pega|nao pega nao)$/.test(currentAnswer);
+  const shortYesNo = /^(sim|isso|exatamente|nao|não|nao pega|nao pega nao)$/.test(currentAnswer);
   const answeringEnvironmentQuestion = /pega sol e chuva|exposto ao sol e a chuva/.test(lastAssistant) && shortYesNo;
   const answeringStyleQuestion = /efeito prata metalico.*ou.*cinza.prata comum/.test(lastAssistant) && shortYes;
   if (answeringStyleQuestion) {
@@ -392,7 +397,7 @@ export function consultativeGuard(question: string, recentTurns: ConversationTur
   const masonry = /\b(muro|parede|reboco|alvenaria|cimento|fachada)\b/.test(all);
   const silver = /\b(prata|prateado|prateada|cinza prata|metalico|metalica)\b/.test(all);
   const advicePattern = /\b(pintar|pintura|tinta|recomenda|indica|qual|quero|preciso|serve|posso usar|melhor|efeito)\b/;
-  const adviceIntent = advicePattern.test(norm(question)) || advicePattern.test(norm(history));
+  const adviceIntent = advicePattern.test(currentAnswer) || (useHistory && advicePattern.test(norm(history)));
   if (!masonry || !silver || !adviceIntent) return null;
 
   const alreadyClarified = /\b(efeito prata metalico|prata metalico mesmo|metalico de verdade|so um tom cinza|cinza prata comum|cinza-prata comum)\b/.test(all);
@@ -435,7 +440,8 @@ function fallback(q: string, products: Product[], knowledge: Knowledge[], recent
     });
     return list.join("\n") + "\n\nEsse saldo só aparece quando foi validado recentemente.";
   }
-  const customerHistory = norm([...recent.map((turn) => turn.user), q].join(" "));
+  const relevantHistory = isContextualFollowUp(q, recent) ? recent.map((turn) => turn.user).join(" ") : "";
+  const customerHistory = norm(relevantHistory + " " + q);
   const project = profile.project ?? {};
   if (/\b(infiltracao|infiltra|umidade|mofo|goteira|vazamento)\b/.test(customerHistory))
     return "Antes de escolher o impermeabilizante, preciso identificar de onde vem a água: telhado/laje, parede ou chão? Isso muda o produto certo.";
@@ -524,7 +530,7 @@ export function rankCompatibleCandidates(products: Product[], profile: CustomerP
 function isContextualFollowUp(question: string, recent: ConversationTurn[]): boolean {
   const n = norm(question.trim());
   return recent.length > 0 && (
-    n.length <= 100 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata|e |mas |entao |nesse|isso|esse|essa|ele|ela|ja esta|qual deles)/.test(n)
+    n.length <= 100 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata|e |mas |entao |nesse|isso|esse|essa|ele|ela|ja esta|qual deles|so quero|só quero|só um|so um|apenas um|não quero|nao quero)/.test(n)
   );
 }
 function productForCustomer(p: Product) {
