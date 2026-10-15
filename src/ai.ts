@@ -249,7 +249,13 @@ function stockFresh(p: Product): boolean {
   return Number.isFinite(age) && age >= 0 && age < 86400000;
 }
 function chosenPrice(p: Product): number | null {
-  return p.promotional_price ?? p.retail_price;
+  const retail = p.retail_price === null ? null : Number(p.retail_price);
+  const promotion = p.promotional_price === null ? null : Number(p.promotional_price);
+  const validRetail = retail !== null && Number.isFinite(retail) && retail > 0 ? retail : null;
+  const validPromotion = promotion !== null && Number.isFinite(promotion) && promotion > 0 ? promotion : null;
+  // Only use a promotion when it is a positive value below a valid retail price.
+  if (validRetail !== null && validPromotion !== null && validPromotion < validRetail) return validPromotion;
+  return validRetail;
 }
 const SEARCH_ALIASES: Record<string, string[]> = {
   acrilica: ["acrilico", "acr", "latex"],
@@ -533,7 +539,7 @@ function isContextualFollowUp(question: string, recent: ConversationTurn[]): boo
     n.length <= 100 && /^(sim|nao|não|é |fica |pega |esta |está |externo|externa|interno|interna|reboco|pintado|cru|metalico|metálico|cinza|prata|e |mas |entao |nesse|isso|esse|essa|ele|ela|ja esta|qual deles|so quero|só quero|só um|so um|apenas um|não quero|nao quero)/.test(n)
   );
 }
-function productForCustomer(p: Product) {
+export function productForCustomer(p: Product) {
   return {
     name: p.name, brand: p.brand, category: p.category,
     stock: stockFresh(p) ? p.stock_quantity : "não confirmado",
