@@ -220,5 +220,7 @@ test("preserves gray-silver as a compound color intent", () => {
   assert.equal(profile.project?.desiredColor, "cinza-prata");
   assert.equal(profile.project?.desiredFinish, undefined);
   const metallic = updateCustomerProfile({}, ["Quero um prata metálico brilhante."]);
-  assert.equal(metallic.project?.desiredFinish, "metalico");
+  assert.equal(metallic.project?.desiredFinish, "metalico-brilhante");
+  const notSilverGray = updateCustomerProfile({}, ["Não quero cinza-prata, prefiro azul."]);
+  assert.equal(notSilverGray.project?.desiredColor, "azul");
 });
