@@ -8,7 +8,9 @@
 - **Preço promocional:** 3 promoções no catálogo; comparação de regras de validação encontrou 0 divergências.
 - **Busca por marca:** código corrigido para ignorar palavras de preenchimento, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo.
 - **Recomendação técnica:** correção adicionada para impedir que uma busca por “muro de prata” despeje esmalte metálico/tinta automotiva só porque o nome contém “prata”. Primeiro pergunta se o cliente quer efeito metálico ou cinza-prata comum. A compatibilidade deve preceder o preço.
-- **Thinking e ferramentas:** código preparado para habilitar thinking do Nemotron e chamadas internas de busca no catálogo/artigos. Pesquisa de fabricantes na internet é opcional e só funciona após configurar `TAVILY_API_KEY` no Render.
+- **Thinking e ferramentas:** código configurado para habilitar thinking do Nemotron, chamar ferramentas de busca interna no catálogo/artigos e fazer até 3 rodadas de ferramenta. A CI testa tipagem, testes e build; ainda falta teste de ponta a ponta com uma chave NVIDIA válida. Pesquisa de fabricantes na internet só funciona após configurar `TAVILY_API_KEY` no Render.
+- **Perfil consultivo persistente:** `rgb_conversation_memory.customer_profile` já foi adicionada no Supabase e versão SQL foi versionada. Guarda prioridades explicitadas (menor preço/custo-benefício/qualidade), marca preferida, experiência, superfície e contexto da obra por até 30 dias.
+- **Base técnica inicial:** 6 artigos consultivos com fontes de fabricantes foram adicionados à `public.knowledge_articles`; a tabela agora tem 13 artigos. Isso é uma base inicial, não uma biblioteca técnica completa por SKU.
 - **Ainda não está pronto para operação completa:** memória curta e otimizações de contexto foram implementadas e publicadas no Render; falta validação funcional do chat com o banco conectado, configurar a chave Tailscale do workflow e obter a URL real de exportação do Altis. O canal WhatsApp ainda não está conectado à Evolution.
 
 ## Checklist do que já foi feito
@@ -29,6 +31,7 @@
 ## Memória e consumo de tokens
 
 - [x] Criada a tabela `public.rgb_conversation_memory` com RLS ativado, sem acesso para roles anon/authenticated e acesso de servidor pelo service_role.
+- [x] Coluna `customer_profile` jsonb criada e versionada em `supabase/migrations/0002_customer_profile_memory.sql`.
 - [x] Site e webhook foram ligados à memória curta. Guarda até 4 trocas encurtadas por sessão, com identidade derivada por HMAC; envia até as 2 últimas trocas ao modelo nas perguntas que precisam de contexto.
 - [x] Registros vencidos são removidos periodicamente quando o serviço está ativo; validade da memória: 30 dias.
 - [x] Aviso de memória/retensão incluído no rodapé do chat web e na primeira resposta de um contato WhatsApp.
@@ -37,8 +40,10 @@
 - [x] Deploy do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
 - [ ] Fazer um teste funcional depois do deploy: várias mensagens seguidas na mesma janela web e verificar se perguntas de continuação como “e para fora?” usam contexto anterior. A tabela de memória estava vazia na última consulta porque a versão nova ainda não tinha gerado conversas.
 - [ ] Confirmar `NVIDIA_API_KEY` no Render e se o modelo está efetivamente respondendo, em vez de fallback determinístico.
+- [ ] Configurar `TAVILY_API_KEY` no Render se quiser pesquisa online de fichas técnicas de fabricantes; ela ainda não foi ativada/testada.
 - [ ] Adicionar `TAVILY_API_KEY` no Render, caso queira pesquisa técnica em sites oficiais de fabricantes. Até isso ser feito e testado, internet não está ativa no agente.
 - [ ] Testar manualmente “Quero pintar um muro de prata, qual você recomenda?” e confirmar que o sistema pergunta se é efeito metálico ou cinza-prata comum, sem despejar a lista de esmaltes/tinta automotiva.
+- [ ] Testar projeto encadeado: responder “só cinza comum” → “pega sol e chuva” → “não quero o mais barato, quero qualidade” → “agora é um portão de madeira”; validar que a memória recupera o contexto útil e substitui o projeto anterior.
 
 ## Auditoria do catálogo
 
