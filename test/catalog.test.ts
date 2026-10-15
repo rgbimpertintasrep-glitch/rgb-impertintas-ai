@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { extractProducts, isStockField, normalizeAltisProduct, normalizeProducts, parseNumber } from "../src/catalog.js";
-import { brandAvailabilityReply, queryTerms, isContextCorrection, isExplicitPriceQuestion, priceReplyFromCatalog } from "../src/ai.js";
+import { brandAvailabilityReply, queryTerms, isContextCorrection, isExplicitPriceQuestion, priceReplyFromCatalog, productForCustomer } from "../src/ai.js";
 
 test("extracts the Altis dados array", () => {
   assert.equal(extractProducts({ dados: [{ produtoId: 1, nome: "Produto" }] }).length, 1);
@@ -271,4 +271,45 @@ test("asks the buyer to choose a variant instead of quoting an ambiguous price",
   const reply = priceReplyFromCatalog("Qual o preço do esmalte Cobertex camurça?", products);
   assert.doesNotMatch(reply, /R\$\s*\d/);
   assert.match(reply, /mais de uma versão parecida/i);
+});
+
+test("keeps catalog prices out of product recommendation payloads", () => {
+  const product = {
+    erp_code: "100-2",
+    name: "TINTA ACRILICA EXTERNA",
+    brand: "MAXVINIL",
+    category: "Tintas",
+    retail_price: 100,
+    promotional_price: 80,
+    stock_quantity: null,
+    stock_verified_at: null,
+    stock_source_field: null
+  } as any;
+  const payload = productForCustomer(product) as Record<string, unknown>;
+  assert.equal("price" in payload, false);
+});
+
+test("does not inherit the old silver-wall guard when the customer starts a different project", () => {
+  const recent = [{
+    user: "Quero pintar um muro de prata, qual você recomenda?",
+    assistant: "Você quer um efeito prata metálico brilhante ou só um tom cinza-prata comum?"
+  }];
+  assert.equal(consultativeGuard("Agora preciso pintar um portão de madeira.", recent), null);
+});
+
+test("ignores an invalid promotional price above the retail price", () => {
+  const product = {
+    erp_code: "100-3",
+    name: "ESMALTE COBERTEX CAMURCA 3,6L",
+    brand: "LUZTOL",
+    category: "Esmaltes",
+    retail_price: 99.9,
+    promotional_price: 150,
+    stock_quantity: null,
+    stock_verified_at: null,
+    stock_source_field: null
+  } as any;
+  const reply = priceReplyFromCatalog("Qual o preço do esmalte Cobertex camurça 3,6L?", [product]);
+  assert.match(reply, /R\$\s*99,90/);
+  assert.doesNotMatch(reply, /R\$\s*150,00/);
 });
