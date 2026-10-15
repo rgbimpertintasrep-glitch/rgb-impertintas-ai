@@ -127,3 +127,16 @@ test("keeps explicit buying priorities across turns but does not invent preferen
   const noPreference = updateCustomerProfile({}, ["Quero pintar um muro de azul."]);
   assert.equal(noPreference.pricePriority, undefined);
 });
+
+import { filterCompatibleCandidates } from "../src/ai.js";
+
+test("does not offer automotive paint, metallic enamel or brocal as wall-paint alternatives", () => {
+  const products = [
+    { erp_code: "1", name: "LAZZUDUR PRATA BARI MET 900ML", brand: "SHERWIN AUTOMOTIVO" },
+    { erp_code: "2", name: "ESMALTE SINTETICO LUZTOL METALICO PRATA NIQUEL", brand: "LUZTOL" },
+    { erp_code: "3", name: "BROCAL METALICO PRATA 500G HITTA", brand: "HITTA" },
+    { erp_code: "4", name: "TINTA ACRILICA EXTERNA CINZA", brand: "MAXVINIL" }
+  ] as any[];
+  const compatible = filterCompatibleCandidates(products, { project: { surface: "alvenaria", environment: "external", desiredColor: "prata" } });
+  assert.deepEqual(compatible.map((p) => p.erp_code), ["4"]);
+});
