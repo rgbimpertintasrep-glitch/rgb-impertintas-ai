@@ -6,7 +6,9 @@
 - **Catálogo importado:** 2.018 registros recebidos, normalizados e guardados no Supabase; 1.996 estão ativos e visíveis no catálogo.
 - **Preço/nome/marca na importação:** 0 divergências encontradas ao comparar os 2.018 produtos normalizados com o JSON original armazenado do Altis.
 - **Preço promocional:** 3 promoções no catálogo; comparação de regras de validação encontrou 0 divergências.
-- **Busca por marca:** código corrigido no GitHub para ignorar palavras de preenchimento como “tem”, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo. Testes de CI passaram no commit da correção de regex em 15/10.
+- **Busca por marca:** código corrigido para ignorar palavras de preenchimento, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo.
+- **Recomendação técnica:** correção adicionada para impedir que uma busca por “muro de prata” despeje esmalte metálico/tinta automotiva só porque o nome contém “prata”. Primeiro pergunta se o cliente quer efeito metálico ou cinza-prata comum. A compatibilidade deve preceder o preço.
+- **Thinking e ferramentas:** código preparado para habilitar thinking do Nemotron e chamadas internas de busca no catálogo/artigos. Pesquisa de fabricantes na internet é opcional e só funciona após configurar `TAVILY_API_KEY` no Render.
 - **Ainda não está pronto para operação completa:** memória curta e otimizações de contexto foram implementadas e publicadas no Render; falta validação funcional do chat com o banco conectado, configurar a chave Tailscale do workflow e obter a URL real de exportação do Altis. O canal WhatsApp ainda não está conectado à Evolution.
 
 ## Checklist do que já foi feito
@@ -30,11 +32,13 @@
 - [x] Site e webhook foram ligados à memória curta. Guarda até 4 trocas encurtadas por sessão, com identidade derivada por HMAC; envia até as 2 últimas trocas ao modelo nas perguntas que precisam de contexto.
 - [x] Registros vencidos são removidos periodicamente quando o serviço está ativo; validade da memória: 30 dias.
 - [x] Aviso de memória/retensão incluído no rodapé do chat web e na primeira resposta de um contato WhatsApp.
-- [x] Respostas simples evitam a NVIDIA quando a regra de catálogo basta; conhecimento limitado a 3 artigos relevantes (até 520 caracteres), no máximo 4 produtos no prompt, `max_tokens=240`, temperatura 0,2.
+- [x] Respostas simples evitam a NVIDIA quando a regra de catálogo basta; conhecimento limitado a 4 artigos relevantes (até 520 caracteres), até 5 candidatos de produto no contexto, thinking com orçamento de 384 e até 900 tokens de geração na rota complexa; temperatura 0,2. Busca na internet requer `TAVILY_API_KEY`.
 - [x] CI passou em typecheck, testes e build para o commit `83ac635`; commits posteriores de aviso de privacidade e documentação também passaram no CI.
 - [x] Deploy do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
 - [ ] Fazer um teste funcional depois do deploy: várias mensagens seguidas na mesma janela web e verificar se perguntas de continuação como “e para fora?” usam contexto anterior. A tabela de memória estava vazia na última consulta porque a versão nova ainda não tinha gerado conversas.
 - [ ] Confirmar `NVIDIA_API_KEY` no Render e se o modelo está efetivamente respondendo, em vez de fallback determinístico.
+- [ ] Adicionar `TAVILY_API_KEY` no Render, caso queira pesquisa técnica em sites oficiais de fabricantes. Até isso ser feito e testado, internet não está ativa no agente.
+- [ ] Testar manualmente “Quero pintar um muro de prata, qual você recomenda?” e confirmar que o sistema pergunta se é efeito metálico ou cinza-prata comum, sem despejar a lista de esmaltes/tinta automotiva.
 
 ## Auditoria do catálogo
 
