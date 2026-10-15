@@ -319,7 +319,7 @@ function isClearlyIncompatible(p: Product, profile: CustomerProfile): boolean {
   const text = norm(p.name + " " + (p.brand ?? ""));
   // Avoid the exact high-risk false matches seen in the live chat.
   if (project.surface === "alvenaria") {
-    if (/\b(brocal|lazzudur|automotivo|base poliester|laca nitro|esmalte sintetico)\b/.test(text)) return true;
+    if (/\b(brocal|lazzudur|automotivo|base poliester|laca nitro|esmalte sintetico|tinta para piso|acrilica piso|premium piso|demarcacao viaria|tinta viaria)\b/.test(text)) return true;
   }
   if (project.surface === "metal") {
     if (/\b(tinta acrilica para parede|latex|massa corrida|massa acrilica|fundo preparador de parede)\b/.test(text)) return true;
@@ -492,6 +492,8 @@ export async function answerCustomer(
   }
   const directBrandReply = brandAvailabilityReply(q, products);
   if (directBrandReply) return { reply: directBrandReply, mode: "catalog_brand", productsFound: products.length };
+  // Keep the answer and price lookup tied to the customer's stated surface; never list a wrong-family item.
+  products = rankCompatibleCandidates(products, customerProfile);
   const needsModel = shouldUseModel(q, recent);
   const key = process.env.NVIDIA_API_KEY;
   if (!key || !needsModel) {
