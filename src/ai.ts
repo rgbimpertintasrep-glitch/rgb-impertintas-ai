@@ -25,7 +25,19 @@ const BRAND_VOICE = [
   "Não prometa que um atendente já foi avisado se nenhum mecanismo confirmou esse aviso. Não diga que consultou estoque quando a quantidade não foi validada."
 ];
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-const terms = (s: string) => [...new Set(norm(s).match(/[a-z0-9]{3,}/g) ?? [])].slice(0, 5);
+const STOP_WORDS = new Set([
+  "tem", "tenho", "temos", "tinha", "tive", "temos", "voces", "voce", "vcs",
+  "quero", "queria", "gostaria", "preciso", "precisava", "procuro", "busco",
+  "oi", "ola", "bom", "dia", "boa", "tarde", "noite", "por", "favor",
+  "para", "pra", "pro", "com", "sem", "de", "da", "do", "das", "dos",
+  "em", "no", "na", "nos", "nas", "um", "uma", "uns", "umas", "e", "ou",
+  "a", "o", "as", "os", "que", "qual", "quais", "esse", "essa", "isso",
+  "aqui", "ali", "tem", "teria", "trabalham", "trabalha", "vende", "vendem"
+]);
+export function queryTerms(s: string): string[] {
+  return [...new Set((norm(s).match(/[a-z0-9]{3,}/g) ?? []).filter((word) => !STOP_WORDS.has(word)))].slice(0, 6);
+}
+const terms = queryTerms;
 const money = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function stockFresh(p: Product): boolean {
   if (p.stock_quantity === null || !p.stock_verified_at || !p.stock_source_field) return false;
@@ -33,20 +45,40 @@ function stockFresh(p: Product): boolean {
   return Number.isFinite(age) && age >= 0 && age < 86400000;
 }
 async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]> {
-  const words = terms(q); if (!words.length) return [];
-  const found = new Map<string, Product>();
-  for (const word of words.slice(0, 3)) {
+  const words = terms(q);
+  if (!words.length) return [];
+  const found = new Map<string, { product: Product; score: number }>();
+  for (const word of words) {
     const pattern = "%" + word.replace(/[%_]/g, "") + "%";
     const { data, error } = await db.from("product_catalog")
       .select("erp_code,name,brand,category,category_source,retail_price,promotional_price,stock_quantity,stock_verified_at,stock_source_field")
       .eq("active", true).eq("customer_visible", true)
+      .gt("retail_price", 0)
       .or("name.ilike." + pattern + ",brand.ilike." + pattern + ",category.ilike." + pattern)
-      .limit(8);
+      .limit(40);
     if (error) throw error;
-    for (const row of data ?? []) found.set(String(row.erp_code), row as Product);
-    if (found.size >= 8) break;
+    for (const row of data ?? []) {
+      const product = row as Product;
+      const name = norm(product.name);
+      const brand = norm(product.brand ?? "");
+      const category = norm(product.category ?? "");
+      let score = 0;
+      for (const term of words) {
+        if (brand === term) score += 12;
+        else if (brand.split(/\\s+/).includes(term)) score += 9;
+        else if (brand.includes(term)) score += 6;
+        if (name.includes(term)) score += 3;
+        if (category.includes(term)) score += 1;
+      }
+      const key = String(product.erp_code);
+      const previous = found.get(key);
+      if (!previous || score > previous.score) found.set(key, { product, score });
+    }
   }
-  return [...found.values()].slice(0, 8);
+  return [...found.values()]
+    .sort((a, b) => b.score - a.score || norm(a.product.name).localeCompare(norm(b.product.name)))
+    .slice(0, 8)
+    .map((item) => item.product);
 }
 async function facts(db: SupabaseClient): Promise<Array<{ title: string; content: string }>> {
   const { data, error } = await db.from("knowledge_articles").select("title,content").eq("active", true).eq("visibility", "public").limit(20);
