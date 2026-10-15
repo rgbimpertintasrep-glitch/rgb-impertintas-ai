@@ -142,10 +142,30 @@ function stockFresh(p: Product): boolean {
 function chosenPrice(p: Product): number | null {
   return p.promotional_price ?? p.retail_price;
 }
+const SEARCH_ALIASES: Record<string, string[]> = {
+  acrilica: ["acrilico", "acr", "latex"],
+  acrilico: ["acrilica", "acr", "latex"],
+  latex: ["acr", "acrilica"],
+  alvenaria: ["parede", "muro", "reboco"],
+  parede: ["alvenaria", "muro", "fachada"],
+  fachada: ["externa", "exterior", "parede"],
+  externa: ["exterior", "fachada"],
+  exterior: ["externa", "fachada"],
+  impermeabilizante: ["impermeabil", "manta", "selante"],
+  impermeabilizacao: ["impermeabil", "manta"],
+  prateado: ["prata"],
+  prateada: ["prata"],
+  esmalte: ["sintetico"],
+  madeira: ["stain", "verniz"],
+  metal: ["ferro", "esmalte"]
+};
 async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]> {
   const words = terms(q);
   if (!words.length) return [];
-  const filters = words.flatMap((word) => {
+  // Altis product names frequently abbreviate product families (e.g. ACR).
+  // Expand database filters but keep the original query terms as the main ranking signal.
+  const expandedWords = [...new Set([...words, ...words.flatMap((word) => SEARCH_ALIASES[word] ?? [])])].slice(0, 12);
+  const filters = expandedWords.flatMap((word) => {
     const pattern = "%" + word.replace(/[%_]/g, "") + "%";
     return ["name.ilike." + pattern, "brand.ilike." + pattern, "category.ilike." + pattern];
   }).join(",");
@@ -166,6 +186,11 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
       else if (brand.includes(term)) score += 7;
       if (name.includes(term)) score += 3;
       if (category.includes(term)) score += 1;
+    }
+    for (const term of expandedWords) {
+      if (words.includes(term)) continue;
+      if (name.includes(term)) score += 0.8;
+      if (category.includes(term)) score += 0.4;
     }
     return { product, score };
   });
@@ -310,6 +335,23 @@ function isClearlyIncompatible(p: Product, profile: CustomerProfile): boolean {
 export function filterCompatibleCandidates(products: Product[], profile: CustomerProfile): Product[] {
   return products.filter((product) => !isClearlyIncompatible(product, profile));
 }
+export function rankCompatibleCandidates(products: Product[], profile: CustomerProfile): Product[] {
+  const compatible = filterCompatibleCandidates(products, profile);
+  const preferred = (profile.preferredBrands ?? []).map(norm);
+  return compatible.sort((a, b) => {
+    const aBrand = norm(a.brand ?? "").replace(/[^a-z0-9]/g, "");
+    const bBrand = norm(b.brand ?? "").replace(/[^a-z0-9]/g, "");
+    const prefA = preferred.some((brand) => aBrand.includes(brand.replace(/[^a-z0-9]/g, ""))) ? 1 : 0;
+    const prefB = preferred.some((brand) => bBrand.includes(brand.replace(/[^a-z0-9]/g, ""))) ? 1 : 0;
+    if (prefA !== prefB) return prefB - prefA;
+    if (profile.pricePriority === "lowest_price") {
+      const priceA = chosenPrice(a) ?? Number.POSITIVE_INFINITY;
+      const priceB = chosenPrice(b) ?? Number.POSITIVE_INFINITY;
+      if (priceA !== priceB) return priceA - priceB;
+    }
+    return 0;
+  });
+}
 function isContextualFollowUp(question: string, recent: ConversationTurn[]): boolean {
   const n = norm(question.trim());
   return recent.length > 0 && (
@@ -399,7 +441,7 @@ async function executeTool(db: SupabaseClient, name: string, rawArgs: string, pr
     const batches = await Promise.all(queries.map((term: string) => searchProducts(db, term)));
     const unique = new Map<string, Product>();
     for (const product of batches.flat()) unique.set(product.erp_code, product);
-    return filterCompatibleCandidates([...unique.values()], profile).slice(0, 10).map(productForCustomer);
+    return rankCompatibleCandidates([...unique.values()], profile).slice(0, 10).map(productForCustomer);
   }
   if (name === "search_technical_knowledge") {
     const batches = await Promise.all(queries.map((term: string) => facts(db, term)));
@@ -463,7 +505,7 @@ export async function answerCustomer(
     store: { name: STORE.name, whatsapp: STORE.whatsapp, position: STORE.position },
     recent_conversation: recent.slice(-3),
     current_customer_message: q,
-    candidate_products: filterCompatibleCandidates(products, customerProfile).slice(0, 5).map(productForCustomer),
+    candidate_products: rankCompatibleCandidates(products, customerProfile).slice(0, 5).map(productForCustomer),
     internal_technical_articles: knowledge,
     customer_profile: customerProfile,
     operating_rules: [
