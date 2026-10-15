@@ -123,7 +123,9 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     return json(res, 503, { error: "Falha ao registrar evento." });
   }
   try {
-    const answer = await answerCustomer(db, m.text);
+    const memoryKey = conversationHash("whatsapp", m.jid);
+    const recentTurns = await loadRecentTurns(db, memoryKey, "whatsapp");
+    const answer = await answerCustomer(db, m.text, recentTurns);
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
     const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
     const postText = (payload: Record<string, unknown>) => fetch(sendUrl, {
@@ -143,6 +145,7 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     }
     if (!sendResponse.ok) throw new Error("Evolution HTTP " + sendResponse.status);
     await db.from("evolution_processed_events").update({ status: "sent", processed_at: new Date().toISOString() }).eq("event_id", eventId);
+    await saveRecentTurns(db, memoryKey, "whatsapp", recentTurns, m.text, answer.reply);
     return json(res, 200, { accepted: true, processed: true, sent: true });
   } catch {
     await db.from("evolution_processed_events").delete().eq("event_id", eventId);
