@@ -208,14 +208,20 @@ export function priceReplyFromCatalog(question: string, products: Product[], con
   if (!ranked.length) {
     return "Não consegui confirmar esse item com segurança no catálogo. Para não chutar o preço, me diga o nome completo e o tamanho da embalagem que aparece no produto.";
   }
-  const topScore = ranked[0].matched;
+  const topScore = ranked[0]?.matched;
+  if (topScore === undefined) {
+    return "Não consegui confirmar esse item com segurança no catálogo. Para não chutar o preço, me diga o nome completo e o tamanho da embalagem que aparece no produto.";
+  }
   const top = ranked.filter((item) => item.matched === topScore);
   // Multiple equally plausible SKUs mean the user must disambiguate before a price is quoted.
   if (top.length > 1) {
     return "Encontrei mais de uma versão parecida e não quero te passar o preço da embalagem errada. Qual delas você procura?\n" +
       top.slice(0, 4).map((item) => "• " + item.product.name + (item.product.brand ? " (" + item.product.brand + ")" : "")).join("\n");
   }
-  const product = top[0].product;
+  const product = top[0]?.product;
+  if (!product) {
+    return "Não consegui confirmar esse item com segurança no catálogo. Para não chutar o preço, me diga o nome completo e o tamanho da embalagem que aparece no produto.";
+  }
   const price = chosenPrice(product);
   if (price === null || !Number.isFinite(Number(price)) || Number(price) <= 0) {
     return "Encontrei o produto, mas não há um preço válido confirmado no catálogo. Vou precisar que a equipe confira antes de te informar um valor.";
