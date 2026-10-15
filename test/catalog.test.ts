@@ -51,7 +51,7 @@ test("rejects oversized or malformed exports; parses currency decimals conservat
 
 test("ignores Portuguese filler words so product queries prioritize the requested brand", () => {
   assert.deepEqual(queryTerms("Tem maxvinil?"), ["maxvinil"]);
-  assert.deepEqual(queryTerms("Vocês têm tinta Maxvinil, por favor?"), ["tinta", "maxvinil"]);
+  assert.deepEqual(queryTerms("Vocês têm tinta Maxvinil, por favor?"), ["maxvinil"]);
 });
 
 test("answers direct brand availability only from matching catalog results", () => {
