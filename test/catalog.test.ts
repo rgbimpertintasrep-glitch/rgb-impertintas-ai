@@ -66,3 +66,12 @@ test("answers direct brand availability only from matching catalog results", () 
   assert.match(reply ?? "", /saldo disponível precisa ser confirmado/i);
   assert.equal(brandAvailabilityReply("Qual o preço dessa tinta?", [product]), null);
 });
+
+test("infers useful categories from common Altis product abbreviations", () => {
+  const acrylic = normalizeAltisProduct({ produtoId: 31, nome: "ACR COBERTEX S/B CROMIO BR 18L MAXVINIL" });
+  const waterproof = normalizeAltisProduct({ produtoId: 32, nome: "AM712 IMPERMEABILIZANTE RHOPDOPAS 1L" });
+  const texture = normalizeAltisProduct({ produtoId: 33, nome: "RUSTICO GRAFIATO LEINERTEX 23KG NOVO CAMURCA" });
+  assert.equal(acrylic?.category, "Tintas e complementos");
+  assert.equal(waterproof?.category, "Impermeabilização e vedação");
+  assert.equal(texture?.category, "Texturas e revestimentos");
+});
