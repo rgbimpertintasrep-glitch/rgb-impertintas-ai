@@ -295,7 +295,8 @@ export function consultativeGuard(question: string, recentTurns: ConversationTur
   const lastAssistant = norm(recent.at(-1)?.assistant ?? "");
   const currentAnswer = norm(question.trim());
   const shortYes = /^(sim|isso|exatamente|sim pode|pode|pode ser|o primeiro|o segundo)$/.test(currentAnswer);
-  const answeringEnvironmentQuestion = /pega sol e chuva|exposto ao sol e a chuva/.test(lastAssistant) && shortYes;
+  const shortYesNo = /^(sim|isso|exatamente|nao|nao pega|nao pega nao)$/.test(currentAnswer);
+  const answeringEnvironmentQuestion = /pega sol e chuva|exposto ao sol e a chuva/.test(lastAssistant) && shortYesNo;
   const answeringStyleQuestion = /efeito prata metalico.*ou.*cinza.prata comum/.test(lastAssistant) && shortYes;
   if (answeringStyleQuestion) {
     return "Só para eu não entender errado: você quer o prata metálico brilhante ou o cinza-prata comum, sem efeito metálico?";
