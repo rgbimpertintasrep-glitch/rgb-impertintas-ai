@@ -198,3 +198,25 @@ test("uses verified product technical facts to reject a wrong surface", () => {
   assert.deepEqual(filterCompatibleCandidates([product], { project: { surface: "alvenaria" } }), []);
   assert.deepEqual(filterCompatibleCandidates([product], { project: { surface: "metal" } }).map((p) => p.erp_code), ["TECH-1"]);
 });
+
+test("understands yes/no as an answer to the prior exposure question rather than repeating it", () => {
+  const recent = [
+    { user: "Quero pintar um muro de prata.", assistant: "Você quer um efeito prata metálico brilhante ou só um tom cinza-prata comum?" },
+    { user: "Só quero um tom cinza-prata comum.", assistant: "Esse muro pega sol e chuva?" }
+  ];
+  assert.equal(consultativeGuard("Sim", recent), null);
+  assert.equal(consultativeGuard("Não", recent), null);
+});
+
+test("does not treat a vague yes as selecting one of two color styles", () => {
+  const recent = [
+    { user: "Quero pintar um muro de prata.", assistant: "Você quer um efeito prata metálico brilhante ou só um tom cinza-prata comum?" }
+  ];
+  assert.match(consultativeGuard("Sim", recent) ?? "", /Só para eu não entender errado/i);
+});
+
+test("preserves gray-silver as a compound color intent", () => {
+  const profile = updateCustomerProfile({}, ["Quero um cinza-prata comum, sem brilho metálico."]);
+  assert.equal(profile.project?.desiredColor, "cinza-prata");
+  assert.equal(profile.project?.desiredFinish, "metálico");
+});
