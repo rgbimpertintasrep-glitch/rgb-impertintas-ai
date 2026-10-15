@@ -101,6 +101,6 @@ No Render, preencha \`EVOLUTION_API_URL\` (base URL sem barra final), \`EVOLUTIO
 
 ## Observações de disponibilidade
 
-Render Free pode suspender o web service por inatividade; a primeira visita pode demorar. O workflow GitHub Actions é o agendador de sincronização, mas precisa de secrets e endpoint Altis configurados. O catálogo Supabase atual ainda está vazio até a primeira importação.
+Render Free pode suspender o web service por inatividade; a primeira visita pode demorar. O workflow GitHub Actions é o agendador de sincronização, mas precisa de secrets e endpoint Altis configurados. O catálogo Supabase recebeu uma importação manual em 15/10/2026: 2.018 produtos, 1.996 ativos/visíveis. A rotina automática ainda depende de uma URL de exportação JSON autorizada do Altis e dos GitHub Actions Secrets. Consulte [STATUS_E_CHECKLIST_2026-10-15.md](STATUS_E_CHECKLIST_2026-10-15.md).
 
 A migração \`rgb_altis_catalog_sync\` foi aplicada ao Supabase. O alerta de segurança do projeto também identificou tabelas antigas em \`private\` sem RLS (\`product_costs\`, \`integration_settings\`, \`rate_limits\`, \`integration_events\`, \`conversation_audit\`). Essas tabelas precisam de revisão própria; a migração desta integração protege as novas tabelas e não altera automaticamente as permissões antigas.
