@@ -12,7 +12,8 @@
     "start": "node dist/src/server.js",
     "sync": "tsx scripts/pull-altis.ts",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "sync:push": "tsx scripts/push-altis.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
