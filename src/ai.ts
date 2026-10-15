@@ -454,7 +454,7 @@ export async function answerCustomer(
       }
       const generated = message.content;
       if (data?.choices?.[0]?.finish_reason === "length" || typeof generated !== "string" || !generated.trim()) return { reply: base, mode: "rules_fallback", productsFound: products.length };
-      const customerVisible = generated.replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+      const customerVisible = generated.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
       if (!customerVisible) return { reply: base, mode: "rules_fallback", productsFound: products.length };
       return { reply: customerVisible.slice(0, 1200), mode: "nvidia_thinking_tools", productsFound: products.length };
     }
