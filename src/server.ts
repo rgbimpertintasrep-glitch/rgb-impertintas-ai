@@ -35,6 +35,16 @@ function safeCustomerProfile(value: unknown): CustomerProfile {
   }
   return profile;
 }
+function scrubMemoryText(value: string, maxLength: number): string {
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email removido]")
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, "[documento removido]")
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, "[documento removido]")
+    .replace(/\b(senha|password|token|chave de api)\s*[:=]\s*\S+/gi, "$1 [redigido]")
+    .replace(/\b(?:\d[ -]?){13,19}\b/g, "[número possivelmente confidencial removido]")
+    .trim()
+    .slice(0, maxLength);
+}
 async function loadConversationMemory(
   db: SupabaseClient,
   sessionHash: string,
@@ -56,7 +66,7 @@ async function loadConversationMemory(
     if (error || !data) return empty;
     const recentTurns = Array.isArray(data.recent_turns)
       ? data.recent_turns.filter((turn: any) => turn && typeof turn.user === "string" && typeof turn.assistant === "string")
-        .slice(-4).map((turn: any) => ({ user: turn.user.slice(0, 240), assistant: turn.assistant.slice(0, 360) }))
+        .slice(-4).map((turn: any) => ({ user: scrubMemoryText(turn.user, 240), assistant: scrubMemoryText(turn.assistant, 360) }))
       : [];
     return { recentTurns, customerProfile: safeCustomerProfile(data.customer_profile) };
   } catch {
@@ -75,8 +85,8 @@ async function saveRecentTurns(
   try {
     const now = new Date();
     const recent = [...previous.slice(-3), {
-      user: userMessage.trim().slice(0, 240),
-      assistant: assistantMessage.trim().slice(0, 360)
+      user: scrubMemoryText(userMessage, 240),
+      assistant: scrubMemoryText(assistantMessage, 360)
     }].slice(-4);
     await db.from("rgb_conversation_memory").upsert({
       session_key_hash: sessionHash,
@@ -159,7 +169,7 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     const recentTurns = memory.recentTurns;
     const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), m.text], recentTurns);
     const answer = await answerCustomer(db, m.text, recentTurns, customerProfile);
-    const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade ao atendimento, mantemos um contexto curto das últimas mensagens por até 30 dias. Evite enviar senhas ou dados sensíveis.";
+    const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade, guardamos trechos curtos das mensagens e preferências de compra/serviço por até 30 dias. Evite enviar senhas, documentos ou dados bancários.";
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
     const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
     const postText = (payload: Record<string, unknown>) => fetch(sendUrl, {
@@ -186,7 +196,7 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     return json(res, 502, { accepted: true, processed: false, reason: "Falha temporária; o evento pode ser reenviado." });
   }
 }
-const html = "<!doctype html><html lang='pt-br'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>RGB Impertintas</title><style>body{font:16px system-ui;max-width:720px;margin:32px auto;padding:0 16px;color:#17243d}h1{font-size:24px}#log{border:1px solid #ddd;border-radius:12px;min-height:220px;padding:12px;white-space:pre-wrap;margin-bottom:12px}.row{display:flex;gap:8px}input{flex:1;min-width:0;padding:12px;border:1px solid #bbb;border-radius:8px}button{padding:12px;border:0;border-radius:8px;background:#1d4ed8;color:white;font-weight:bold}small{color:#667085}</style><h1>RGB Impertintas</h1><p>Assistente virtual para pintura, reforma e impermeabilização.</p><div id='log'>Olá! Como posso ajudar?</div><form id='f' class='row'><input id='q' maxlength='1200' placeholder='Digite sua dúvida' required><button>Enviar</button></form><p><small>Preços e estoque são informados somente quando validados. WhatsApp: +55 62 92005-9202.<br>Para continuar o atendimento, guardamos trechos curtos das últimas mensagens por até 30 dias. Evite enviar senhas ou dados sensíveis.</small></p><script>const sessionId=(()=>{try{let v=localStorage.getItem('rgb-ai-chat-session');if(!v){v=crypto.randomUUID();localStorage.setItem('rgb-ai-chat-session',v)}return v}catch{return Date.now().toString(36)+Math.random().toString(36).slice(2)}})();const f=document.getElementById('f'),q=document.getElementById('q'),log=document.getElementById('log');f.addEventListener('submit',async e=>{e.preventDefault();const m=q.value.trim();if(!m)return;log.textContent='Você: '+m+'\\n\\nConsultando…';q.value='';try{const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:m,sessionId})});const d=await r.json();log.textContent='Você: '+m+'\\n\\nRGB: '+(d.reply||d.error||'Não foi possível responder.')}catch{log.textContent='Falha de conexão. Fale com a equipe pelo WhatsApp +55 62 92005-9202.'}})</script></html>";
+const html = "<!doctype html><html lang='pt-br'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>RGB Impertintas</title><style>body{font:16px system-ui;max-width:720px;margin:32px auto;padding:0 16px;color:#17243d}h1{font-size:24px}#log{border:1px solid #ddd;border-radius:12px;min-height:220px;padding:12px;white-space:pre-wrap;margin-bottom:12px}.row{display:flex;gap:8px}input{flex:1;min-width:0;padding:12px;border:1px solid #bbb;border-radius:8px}button{padding:12px;border:0;border-radius:8px;background:#1d4ed8;color:white;font-weight:bold}small{color:#667085}</style><h1>RGB Impertintas</h1><p>Assistente virtual para pintura, reforma e impermeabilização.</p><div id='log'>Olá! Como posso ajudar?</div><form id='f' class='row'><input id='q' maxlength='1200' placeholder='Digite sua dúvida' required><button>Enviar</button></form><p><small>Preços e estoque são informados somente quando validados. WhatsApp: +55 62 92005-9202.<br>Para continuar o atendimento, guardamos trechos curtos das mensagens e preferências de compra/serviço por até 30 dias. Evite enviar senhas, documentos ou dados bancários.</small></p><script>const sessionId=(()=>{try{let v=localStorage.getItem('rgb-ai-chat-session');if(!v){v=crypto.randomUUID();localStorage.setItem('rgb-ai-chat-session',v)}return v}catch{return Date.now().toString(36)+Math.random().toString(36).slice(2)}})();const f=document.getElementById('f'),q=document.getElementById('q'),log=document.getElementById('log');f.addEventListener('submit',async e=>{e.preventDefault();const m=q.value.trim();if(!m)return;log.textContent='Você: '+m+'\\n\\nConsultando…';q.value='';try{const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:m,sessionId})});const d=await r.json();log.textContent='Você: '+m+'\\n\\nRGB: '+(d.reply||d.error||'Não foi possível responder.')}catch{log.textContent='Falha de conexão. Fale com a equipe pelo WhatsApp +55 62 92005-9202.'}})</script></html>";
 
 const adminHtml = "<!doctype html><html lang='pt-br'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>RGB | Importar catálogo</title><style>body{font:15px system-ui;max-width:760px;margin:28px auto;padding:0 15px;color:#18243b}section{padding:18px;border:1px solid #dde3ec;border-radius:14px;margin:14px 0}input,button{font:inherit;padding:10px;margin:5px 0;max-width:100%}input[type=password],input[type=file]{display:block;width:95%}button{background:#174dcc;color:#fff;border:0;border-radius:8px;cursor:pointer}small{color:#667085}#status{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fb;padding:12px;border-radius:8px}</style><h1>RGB Impertintas · Importação Altis</h1><p>Importa o JSON do Altis para o catálogo consultável e guarda o registro original em tabela restrita.</p><section><label>Chave administrativa (SYNC_ADMIN_TOKEN)<input id='token' type='password' autocomplete='off' required></label><small>A chave é enviada somente no cabeçalho HTTPS desta sessão; não fica salva no navegador.</small></section><section><label>Exportação JSON do Altis<input id='file' type='file' accept='.json,application/json' required></label><p><small>Não envie o arquivo a terceiros. O JSON original pode conter custos e outros dados internos. O servidor deve estar configurado com a chave service-role do Supabase.</small></p><button id='import'>Importar catálogo</button> <button id='check' type='button'>Ver última sincronização</button><div id='status' role='status'>Aguardando arquivo.</div></section><script>const el=id=>document.getElementById(id),status=el('status');el('import').addEventListener('click',async()=>{const file=el('file').files[0],token=el('token').value;if(!file||!token){status.textContent='Escolha o JSON e informe a chave administrativa.';return}if(file.size>40*1024*1024){status.textContent='O arquivo ultrapassa 40 MiB.';return}el('import').disabled=true;status.textContent='Lendo e importando…';try{const payload=JSON.parse(await file.text());const res=await fetch('/api/altis/import',{method:'POST',headers:{'content-type':'application/json','x-admin-token':token},body:JSON.stringify(payload)});const data=await res.json();status.textContent=JSON.stringify(data,null,2);if(!res.ok)status.textContent='Falha HTTP '+res.status+'\\n'+status.textContent}catch(e){status.textContent='Falha: '+(e&&e.message?e.message:'arquivo inválido')}finally{el('import').disabled=false}});el('check').addEventListener('click',async()=>{const token=el('token').value;if(!token){status.textContent='Informe a chave administrativa.';return}try{const res=await fetch('/api/altis/status',{headers:{'x-admin-token':token}});status.textContent=JSON.stringify(await res.json(),null,2)}catch{status.textContent='Não foi possível consultar o status.'}})</script></html>";
 
