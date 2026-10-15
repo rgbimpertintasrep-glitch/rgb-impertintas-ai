@@ -15,6 +15,21 @@ Já está publicado:
 
 **Importante:** publicar o agente não conecta automaticamente o WhatsApp. A aplicação web, o banco de dados, o modelo de IA e a Evolution API são componentes diferentes.
 
+## Memória de conversa e consumo de tokens
+
+A memória curta do atendimento foi implementada no serviço: guarda no Supabase somente as últimas 4 trocas abreviadas de cada conversa, vinculadas a um identificador derivado por chave, com validade de 30 dias. O prompt da NVIDIA recebe no máximo as 2 últimas trocas, quando a pergunta exige orientação mais elaborada. A página web e o webhook do WhatsApp usam essa memória separadamente. A primeira resposta no WhatsApp informa ao cliente que esse contexto curto é guardado por até 30 dias; a página web também exibe esse aviso.
+
+O agente foi ajustado para:
+- responder consultas simples de marca, preço, contato e endereço sem chamar a NVIDIA quando uma resposta determinística basta;
+- buscar no máximo 3 artigos públicos relevantes, com conteúdo reduzido;
+- enviar no máximo 4 produtos correspondentes ao modelo;
+- limitar respostas geradas a 240 tokens e usar temperatura 0,2;
+- nunca enviar ao modelo o payload bruto do Altis, custos internos ou campos confidenciais;
+- não informar estoque enquanto o campo correto não tiver sido confirmado.
+
+A memória ajuda com perguntas de continuação como “e para fora?”, mas não é uma memória humana ilimitada nem substitui a conferência do catálogo. Para continuidade, o banco guarda pequenos trechos de mensagens; clientes devem evitar enviar senhas, documentos, dados bancários ou informações sensíveis. A disponibilidade real depende de o Render ter a variável de acesso ao Supabase configurada e de o deploy estar atualizado.
+
+
 ## Passo 1 — ligar o banco de dados ao agente
 
 1. Abra o [projeto RGB no Supabase](https://supabase.com/dashboard/project/sxuobjzimaaadrvfhvry).
@@ -126,11 +141,45 @@ Depois de ter uma URL real da Evolution e conectar o número por QR:
 
 ## Passo 6 — sincronização automática do Altis (depois do primeiro teste)
 
-O GitHub já tem um workflow preparado para rodar a cada 15 minutos, mas ele precisa de uma URL real de exportação JSON do Altis. O endereço Tailscale não é uma API e não cria a exportação sozinho.
+O GitHub já tem um workflow preparado para rodar a cada 15 minutos, mas a última tentativa falhou antes de consultar o Altis: o log informou que o Tailscale não recebeu uma chave de autenticação. Siga os passos abaixo.
 
-A sincronização recorrente só poderá ser ligada quando você tiver uma URL que realmente devolva o JSON completo do Altis através da rede privada. Ela pode vir de um recurso oficial do fornecedor ou de uma ponte autorizada. Não exponha a porta do ERP diretamente à internet.
+### A. Obter TAILSCALE_AUTHKEY
 
-Depois disso, em GitHub → Settings → Secrets and variables → Actions, configure TAILSCALE_AUTHKEY, ALTIS_EXPORT_URL, RENDER_APP_URL com valor https://rgb-impertintas-ai.onrender.com e SYNC_ADMIN_TOKEN com o mesmo valor do Render. ALTIS_EXPORT_TOKEN é opcional. Só marque ALTIS_EXPORT_IS_FULL_SNAPSHOT=true se tiver certeza de que cada export contém a lista completa; caso contrário, produtos ausentes poderiam ser inativados.
+1. Entre no painel administrativo do Tailscale: https://login.tailscale.com/admin/settings/keys
+2. Abra **Keys** e clique em **Generate auth key**.
+3. O workflow usa a Action atual do Tailscale, que exige identidade por tag no modo com chave. Escolha uma tag já autorizada na política da sua tailnet; se não houver nenhuma, crie uma tag de CI pela política de acesso primeiro. Não escolha uma tag aleatória sem conferir a política.
+4. Configure a chave como **Reusable** e **Ephemeral**. Ative **Pre-approved** se essa opção aparecer e a aprovação de dispositivos estiver habilitada na tailnet. Para começar, defina uma expiração e planeje renovar a chave antes de vencer.
+5. Gere a chave e copie o valor na hora. Trate como senha administrativa da rede privada. Não envie pelo chat e não coloque em arquivo público.
+
+A documentação oficial explica as opções e os cuidados de chaves: https://tailscale.com/docs/features/access-control/auth-keys e a Action do GitHub: https://tailscale.com/docs/integrations/github/github-action.
+
+### B. Salvar os segredos no GitHub
+
+Abra https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/settings/secrets/actions. Em **Secrets and variables → Actions → Repository secrets**, use **New repository secret** para cada item abaixo. Se já existir, atualize o existente.
+
+- **Name:** \`TAILSCALE_AUTHKEY\` — **Secret:** cole a chave gerada no Tailscale.
+- **Name:** \`RENDER_APP_URL\` — **Secret:** \`https://rgb-impertintas-ai.onrender.com\`.
+- **Name:** \`SYNC_ADMIN_TOKEN\` — **Secret:** copie exatamente o valor de \`SYNC_ADMIN_TOKEN\` no Environment do Render. Não gere um valor diferente para o GitHub.
+
+Salve cada segredo. O GitHub esconde o valor depois de cadastrado; isso é esperado. O valor de \`SYNC_ADMIN_TOKEN\` deve coincidir com o Render. Não é necessário colocar \`RENDER_APP_URL\` no Render: este segredo é usado pelo workflow do GitHub.
+
+A rota privada da loja também precisa continuar anunciada e aprovada no Tailscale. O workflow já usa \`--accept-routes\`, mas isso não substitui as permissões de acesso da tailnet.
+
+### C. Obter ALTIS_EXPORT_URL — etapa separada e ainda bloqueada
+
+\`ALTIS_EXPORT_URL\` não é um token e não é simplesmente o IP do computador. É uma URL HTTP(S) real que, quando acessada pelo runner do GitHub através do Tailscale, responde com um JSON de produtos e \`Content-Type: application/json\`. O JSON precisa ser um array de produtos, \`{"dados":[...]}\` ou \`{"products":[...]}\`.
+
+Para obter esse endereço, peça ao fornecedor/suporte Altis o nome e a documentação de uma **API ou exportação JSON autorizada** para o catálogo. Confirme a URL, porta, caminho, autenticação e se o retorno sempre contém todos os produtos. Se a exportação exigir token Bearer, salve-o também como \`ALTIS_EXPORT_TOKEN\`.
+
+Se o Altis não disponibilizar uma API/exportação acessível, será necessário montar uma ponte autorizada dentro da rede da loja (por exemplo, um serviço local que publique apenas o JSON de catálogo), mantida em funcionamento e acessível pelo Tailscale. Isso não pode ser substituído apenas pelo endereço IP nem por uma porta observada na rede. Não exponha o ERP diretamente à internet e não adivinhe uma URL.
+
+**Não execute a sincronização recorrente até ALTIS_EXPORT_URL ser real e testada.** Quando a URL existir, salve-a como secret \`ALTIS_EXPORT_URL\`. Só marque \`ALTIS_EXPORT_IS_FULL_SNAPSHOT=true\` se tiver certeza de que cada export contém a lista completa; caso contrário, produtos ausentes poderiam ser inativados.
+
+### D. Testar
+
+Abra https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/actions/workflows/altis-sync.yml, selecione **Altis Catalog Sync** e use **Run workflow**. O workflow precisa primeiro conectar o Tailscale, depois acessar o JSON e, por fim, enviar a importação ao Render. Se falhar, abra a execução e copie só a mensagem de erro — nunca os valores dos segredos.
+
+A documentação de subnet router do Tailscale explica a aprovação da rota privada: https://tailscale.com/docs/features/subnet-routers/how-to/setup.
 
 Workflow: https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/actions/workflows/altis-sync.yml
 
