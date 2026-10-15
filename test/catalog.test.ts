@@ -103,3 +103,27 @@ test("does not recommend an unverified metallic system for masonry", () => {
   assert.match(reply ?? "", /ficha técnica/i);
   assert.match(reply ?? "", /reboco\/cimento/i);
 });
+
+import { updateCustomerProfile } from "../src/ai.js";
+
+test("learns only explicit buying preferences and current project facts", () => {
+  const profile = updateCustomerProfile({}, [
+    "Prefiro Maxvinil, sou pintor profissional e quero a opção mais barata para um muro externo cinza."
+  ]);
+  assert.equal(profile.pricePriority, "lowest_price");
+  assert.equal(profile.experienceLevel, "professional");
+  assert.deepEqual(profile.preferredBrands, ["maxvinil"]);
+  assert.equal(profile.project?.surface, "alvenaria");
+  assert.equal(profile.project?.environment, "external");
+  assert.equal(profile.project?.desiredColor, "cinza");
+});
+
+test("keeps explicit buying priorities across turns but does not invent preferences", () => {
+  const first = updateCustomerProfile({}, ["Gosto de qualidade e durabilidade, preço não é o principal."]);
+  assert.equal(first.pricePriority, "quality");
+  const next = updateCustomerProfile(first, ["Agora esse muro pega sol e chuva."]);
+  assert.equal(next.pricePriority, "quality");
+  assert.equal(next.project?.environment, "external");
+  const noPreference = updateCustomerProfile({}, ["Quero pintar um muro de azul."]);
+  assert.equal(noPreference.pricePriority, undefined);
+});
