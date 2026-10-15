@@ -162,7 +162,8 @@ function fallback(q: string, products: Product[], knowledge: Knowledge[], recent
     });
     return list.join("\n") + "\n\nEsse saldo só aparece quando foi validado recentemente.";
   }
-  const nRecent = recent.length ? norm(recent[recent.length - 1].user + " " + recent[recent.length - 1].assistant) : "";
+  const latest = recent.at(-1);
+  const nRecent = latest ? norm(latest.user + " " + latest.assistant) : "";
   if (/\b(infiltracao|infiltra|umidade|mofo|goteira|vazamento)\b/.test(n + " " + nRecent))
     return "Antes de escolher o impermeabilizante, preciso identificar a origem da água. Está entrando pelo telhado/laje, pela parede ou vem do chão?";
   if (/\b(muro|parede|reboco|fachada)\b/.test(n))
