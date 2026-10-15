@@ -77,11 +77,23 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
   }
   try {
     const answer = await answerCustomer(db, m.text);
-    const sendResponse = await fetch(base + "/message/sendText/" + encodeURIComponent(instance), {
+    const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
+    const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
+    const postText = (payload: Record<string, unknown>) => fetch(sendUrl, {
       method: "POST", headers: { "content-type": "application/json", apikey: apiKey },
-      body: JSON.stringify({ number: m.jid.replace(/@s\.whatsapp\.net$/, ""), textMessage: { text: answer.reply } }),
-      signal: AbortSignal.timeout(15000)
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(15000)
     });
+    let sendResponse = await postText({ number, textMessage: { text: answer.reply } });
+    if (sendResponse.status === 400) {
+      const errorBody = await sendResponse.text();
+      // Evolution deployments differ by version: older builds accept textMessage.text,
+      // while some newer builds validate a top-level text field.
+      if (/requires property\s*["']?text|property ["']text["']/i.test(errorBody)) {
+        sendResponse = await postText({ number, text: answer.reply });
+      } else {
+        throw new Error("Evolution HTTP 400: payload de envio recusado.");
+      }
+    }
     if (!sendResponse.ok) throw new Error("Evolution HTTP " + sendResponse.status);
     await db.from("evolution_processed_events").update({ status: "sent", processed_at: new Date().toISOString() }).eq("event_id", eventId);
     return json(res, 200, { accepted: true, processed: true, sent: true });
