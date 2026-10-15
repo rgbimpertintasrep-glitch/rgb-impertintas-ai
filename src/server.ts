@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { answerCustomer } from "./ai.js";
+import { answerCustomer, type ConversationTurn } from "./ai.js";
 import { isStockField } from "./catalog.js";
 import { pullAltisJson, syncAltisPayload } from "./sync.js";
 
