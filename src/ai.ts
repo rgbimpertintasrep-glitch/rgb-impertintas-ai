@@ -94,10 +94,28 @@ export function updateCustomerProfile(existing: CustomerProfile = {}, userMessag
   return profile;
 }
 
+type ProductTechnicalFact = {
+  manufacturer: string;
+  source_url: string;
+  source_title: string | null;
+  suitable_surfaces: string[];
+  excluded_surfaces: string[];
+  use_cases: string[];
+  application_guidance: string | null;
+  surface_preparation: string | null;
+  dilution_guidance: string | null;
+  coat_guidance: string | null;
+  coverage_guidance: string | null;
+  drying_guidance: string | null;
+  technical_excerpt: string | null;
+  verified_at: string | null;
+};
 type Product = {
+  id?: string;
   erp_code: string; name: string; brand: string | null; category: string | null; category_source?: string | null;
   retail_price: number | null; promotional_price: number | null; stock_quantity: number | null;
   stock_verified_at: string | null; stock_source_field?: string | null;
+  technical_facts?: ProductTechnicalFact[];
 };
 type Knowledge = { title: string; content: string };
 const STORE = {
@@ -159,6 +177,41 @@ const SEARCH_ALIASES: Record<string, string[]> = {
   madeira: ["stain", "verniz"],
   metal: ["ferro", "esmalte"]
 };
+async function loadVerifiedTechnicalFacts(db: SupabaseClient, products: Product[]): Promise<Product[]> {
+  const ids = [...new Set(products.map((product) => product.id).filter((id): id is string => Boolean(id)))];
+  if (!ids.length) return products;
+  try {
+    const { data, error } = await db.from("rgb_product_technical_facts")
+      .select("product_id,manufacturer,source_url,source_title,suitable_surfaces,excluded_surfaces,use_cases,application_guidance,surface_preparation,dilution_guidance,coat_guidance,coverage_guidance,drying_guidance,technical_excerpt,verified_at")
+      .eq("active", true).eq("verification_status", "verified").in("product_id", ids);
+    if (error) return products;
+    const byProduct = new Map<string, ProductTechnicalFact[]>();
+    for (const row of (data ?? []) as any[]) {
+      const fact: ProductTechnicalFact = {
+        manufacturer: String(row.manufacturer ?? "Fabricante"),
+        source_url: String(row.source_url ?? ""),
+        source_title: typeof row.source_title === "string" ? row.source_title.slice(0, 180) : null,
+        suitable_surfaces: Array.isArray(row.suitable_surfaces) ? row.suitable_surfaces.map(String).slice(0, 12) : [],
+        excluded_surfaces: Array.isArray(row.excluded_surfaces) ? row.excluded_surfaces.map(String).slice(0, 12) : [],
+        use_cases: Array.isArray(row.use_cases) ? row.use_cases.map(String).slice(0, 12) : [],
+        application_guidance: typeof row.application_guidance === "string" ? row.application_guidance.slice(0, 500) : null,
+        surface_preparation: typeof row.surface_preparation === "string" ? row.surface_preparation.slice(0, 400) : null,
+        dilution_guidance: typeof row.dilution_guidance === "string" ? row.dilution_guidance.slice(0, 240) : null,
+        coat_guidance: typeof row.coat_guidance === "string" ? row.coat_guidance.slice(0, 240) : null,
+        coverage_guidance: typeof row.coverage_guidance === "string" ? row.coverage_guidance.slice(0, 240) : null,
+        drying_guidance: typeof row.drying_guidance === "string" ? row.drying_guidance.slice(0, 240) : null,
+        technical_excerpt: typeof row.technical_excerpt === "string" ? row.technical_excerpt.slice(0, 700) : null,
+        verified_at: typeof row.verified_at === "string" ? row.verified_at : null
+      };
+      const list = byProduct.get(String(row.product_id)) ?? [];
+      list.push(fact);
+      byProduct.set(String(row.product_id), list);
+    }
+    return products.map((product) => ({ ...product, technical_facts: product.id ? (byProduct.get(product.id) ?? []).slice(0, 3) : [] }));
+  } catch {
+    return products;
+  }
+}
 async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]> {
   const words = terms(q);
   if (!words.length) return [];
@@ -170,7 +223,7 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
     return ["name.ilike." + pattern, "brand.ilike." + pattern, "category.ilike." + pattern];
   }).join(",");
   const { data, error } = await db.from("product_catalog")
-    .select("erp_code,name,brand,category,category_source,retail_price,promotional_price,stock_quantity,stock_verified_at,stock_source_field")
+    .select("id,erp_code,name,brand,category,category_source,retail_price,promotional_price,stock_quantity,stock_verified_at,stock_source_field")
     .eq("active", true).eq("customer_visible", true)
     .gt("retail_price", 0)
     .or(filters)
@@ -194,8 +247,9 @@ async function searchProducts(db: SupabaseClient, q: string): Promise<Product[]>
     }
     return { product, score };
   });
-  return scored.sort((a, b) => b.score - a.score || norm(a.product.name).localeCompare(norm(b.product.name)))
+  const top = scored.sort((a, b) => b.score - a.score || norm(a.product.name).localeCompare(norm(b.product.name)))
     .slice(0, 8).map((item) => item.product);
+  return loadVerifiedTechnicalFacts(db, top);
 }
 export function brandAvailabilityReply(question: string, products: Product[]): string | null {
   const n = norm(question);
@@ -317,7 +371,21 @@ function isClearlyIncompatible(p: Product, profile: CustomerProfile): boolean {
   const project = profile.project;
   if (!project?.surface) return false;
   const text = norm(p.name + " " + (p.brand ?? ""));
-  // Avoid the exact high-risk false matches seen in the live chat.
+  const aliases: Record<string, string[]> = {
+    alvenaria: ["alvenaria", "parede", "reboco", "muro", "fachada"],
+    madeira: ["madeira"],
+    metal: ["metal", "ferro"],
+    piso: ["piso", "chao", "contrapiso"],
+    "telhado/telha": ["telhado", "telha"],
+    "laje/terraço": ["laje", "terraco"],
+    "cerâmica/azulejo": ["ceramica", "azulejo"]
+  };
+  const surfaceTokens = aliases[project.surface] ?? [norm(project.surface)];
+  const verified = p.technical_facts ?? [];
+  if (verified.some((fact) => fact.excluded_surfaces.some((surface) => surfaceTokens.includes(norm(surface))))) return true;
+  const allowedEvidence = verified.filter((fact) => fact.suitable_surfaces.length > 0);
+  if (allowedEvidence.length && !allowedEvidence.some((fact) => fact.suitable_surfaces.some((surface) => surfaceTokens.includes(norm(surface))))) return true;
+  // Conservative guard for known name patterns; verified source evidence takes precedence only for additions, never removes this safety guard.
   if (project.surface === "alvenaria") {
     if (/\b(brocal|lazzudur|automotivo|base poliester|laca nitro|esmalte sintetico|tinta para piso|acrilica piso|premium piso|demarcacao viaria|tinta viaria)\b/.test(text)) return true;
   }
@@ -364,7 +432,22 @@ function productForCustomer(p: Product) {
     name: p.name, brand: p.brand, category: p.category,
     price: price === null ? null : Number(price),
     stock: stockFresh(p) ? p.stock_quantity : "não confirmado",
-    category_estimated: p.category_source === "inferred"
+    category_estimated: p.category_source === "inferred",
+    verified_technical_evidence: (p.technical_facts ?? []).slice(0, 2).map((fact) => ({
+      manufacturer: fact.manufacturer,
+      source_title: fact.source_title,
+      source_url: fact.source_url,
+      suitable_surfaces: fact.suitable_surfaces,
+      excluded_surfaces: fact.excluded_surfaces,
+      use_cases: fact.use_cases,
+      application_guidance: fact.application_guidance,
+      surface_preparation: fact.surface_preparation,
+      dilution_guidance: fact.dilution_guidance,
+      coat_guidance: fact.coat_guidance,
+      coverage_guidance: fact.coverage_guidance,
+      drying_guidance: fact.drying_guidance,
+      verified_at: fact.verified_at
+    }))
   };
 }
 const TOOL_DEFINITIONS: any[] = [
