@@ -10,8 +10,8 @@ Já está publicado:
 - Código versionado: https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai
 - Projeto Supabase criado e tabelas de sincronização criadas.
 - O código tem o webhook que conversa com a Evolution API, mas **a própria Evolution API ainda não foi implantada como um serviço separado**.
-- O catálogo do Supabase ainda está vazio até importar o JSON do Altis.
-- O modelo NVIDIA já está selecionado no código e no Render, mas a chave pessoal da NVIDIA ainda precisa ser adicionada.
+- O catálogo já recebeu uma importação manual do Altis em 15/10/2026: 2.018 produtos no total (1.996 ativos/visíveis no catálogo). A sincronização automática contínua ainda não está ligada.
+- O modelo NVIDIA já está selecionado no código e o parâmetro foi preparado no Render; a ativação efetiva de NVIDIA_API_KEY ainda precisa ser confirmada no painel/teste.
 
 **Importante:** publicar o agente não conecta automaticamente o WhatsApp. A aplicação web, o banco de dados, o modelo de IA e a Evolution API são componentes diferentes.
 
