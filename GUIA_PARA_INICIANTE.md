@@ -17,13 +17,13 @@ Já está publicado:
 
 ## Memória de conversa e consumo de tokens
 
-A memória curta do atendimento foi implementada no serviço: guarda no Supabase somente as últimas 4 trocas abreviadas de cada conversa, vinculadas a um identificador derivado por chave, com validade de 30 dias. O prompt da NVIDIA recebe no máximo as 2 últimas trocas, quando a pergunta exige orientação mais elaborada. A página web e o webhook do WhatsApp usam essa memória separadamente. A primeira resposta no WhatsApp informa ao cliente que esse contexto curto é guardado por até 30 dias; a página web também exibe esse aviso.
+A memória curta do atendimento foi implementada no serviço: guarda no Supabase somente as últimas 4 trocas abreviadas de cada conversa, vinculadas a um identificador derivado por chave, com validade de 30 dias. O prompt da NVIDIA recebe até as 3 últimas trocas, quando a pergunta exige orientação mais elaborada. A página web e o webhook do WhatsApp usam essa memória separadamente. A primeira resposta no WhatsApp informa ao cliente que esse contexto curto é guardado por até 30 dias; a página web também exibe esse aviso.
 
 O agente foi ajustado para:
 - responder consultas simples de marca, preço, contato e endereço sem chamar a NVIDIA quando uma resposta determinística basta;
-- buscar no máximo 3 artigos públicos relevantes, com conteúdo reduzido;
-- enviar no máximo 4 produtos correspondentes ao modelo;
-- limitar respostas geradas a 240 tokens e usar temperatura 0,2;
+- buscar no máximo 4 artigos públicos relevantes, com conteúdo reduzido;
+- enviar no máximo 5 candidatos do catálogo ao modelo; não tratar candidatos como recomendações sem verificar aplicação;
+- usar modo thinking nas perguntas complexas, com orçamento de raciocínio limitado e até 900 tokens de geração; usar temperatura 0,2;
 - nunca enviar ao modelo o payload bruto do Altis, custos internos ou campos confidenciais;
 - não informar estoque enquanto o campo correto não tiver sido confirmado.
 
@@ -71,6 +71,26 @@ A personalidade e o funcionamento do agente já usam o endpoint compatível da N
 A configuração padrão foi trocada para este modelo porque a página do modelo anterior, openai/gpt-oss-120b, marca o endpoint gratuito como depreciado. O catálogo NVIDIA lista atualmente o modelo Nemotron acima com endpoint gratuito, mas limites, disponibilidade e condições podem mudar. Se a NVIDIA devolver erro ou atingir limite, o agente volta às respostas de segurança sem o modelo; ele não deve inventar preços ou estoque.
 
 Referência oficial para obter a chave: https://docs.api.nvidia.com/nim/docs/api-quickstart
+
+### Como a IA raciocina, usa ferramentas e consulta a internet
+
+O modelo não foi treinado especificamente com os dados da RGB. A aplicação consulta o banco Supabase a cada pergunta e envia ao modelo apenas produtos comerciais e artigos públicos relevantes. Isso é consulta de contexto (RAG), não retreinamento do modelo.
+
+O código agora está preparado para:
+- **Thinking:** habilitar o modo de raciocínio do Nemotron em perguntas técnicas/complexas, com limite de uso para não desperdiçar tokens. O cliente recebe a resposta final, não o rascunho interno.
+- **Ferramentas internas:** o modelo pode solicitar uma nova busca no catálogo RGB ou nos artigos técnicos públicos. O servidor executa a busca e devolve somente os dados permitidos.
+- **Pesquisa na internet:** opcional, restrita a sites de fabricantes pré-selecionados. O modelo NVIDIA, sozinho, não navega na internet. Para ativar a ferramenta externa, é necessária uma chave do serviço de busca.
+
+#### Ativar pesquisa oficial de fabricantes (opcional)
+
+1. Crie uma conta no [Tavily](https://app.tavily.com/home) e gere uma API key no painel.
+2. Abra as [variáveis do Render](https://dashboard.render.com/web/srv-db7v1jjrjlhs7396tfi0/env).
+3. Crie a variável **TAVILY_API_KEY** e cole a chave diretamente no Render. Nunca a envie por este chat nem a coloque no GitHub.
+4. Salve as alterações e aguarde o deploy terminar.
+
+A ferramenta só pesquisa os domínios de fabricantes cadastrados no código. Ela serve para conferir ficha técnica, superfície indicada, preparo e aplicação; **não** consulta a internet para definir preço RGB, promoção ou estoque. Se a chave não estiver configurada ou não houver resultado oficial, a IA deve informar a incerteza e não inventar compatibilidade.
+
+**Importante:** esse recurso de internet só deve ser considerado ativo depois de cadastrar a chave e testar a resposta. Mesmo com busca oficial, a sincronização de estoque, a conexão do WhatsApp e a URL automática de exportação do Altis continuam sendo etapas separadas.
 
 ## Passo 3 — importar todos os produtos do Altis
 
