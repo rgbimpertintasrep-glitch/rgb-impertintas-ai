@@ -293,7 +293,7 @@ function isClearlyIncompatible(p: Product, profile: CustomerProfile): boolean {
   }
   return false;
 }
-function filterCompatibleCandidates(products: Product[], profile: CustomerProfile): Product[] {
+export function filterCompatibleCandidates(products: Product[], profile: CustomerProfile): Product[] {
   return products.filter((product) => !isClearlyIncompatible(product, profile));
 }
 function isContextualFollowUp(question: string, recent: ConversationTurn[]): boolean {
