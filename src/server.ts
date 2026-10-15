@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { answerCustomer, type ConversationTurn } from "./ai.js";
+import { answerCustomer, updateCustomerProfile, type ConversationTurn, type CustomerProfile } from "./ai.js";
 import { isStockField } from "./catalog.js";
 import { pullAltisJson, syncAltisPayload } from "./sync.js";
 
@@ -18,7 +18,29 @@ function conversationHash(channel: "web" | "whatsapp", identity: string): string
   const secret = process.env.SYNC_ADMIN_TOKEN || process.env.EVOLUTION_WEBHOOK_TOKEN || key || url;
   return createHmac("sha256", secret).update(channel + ":" + identity).digest("hex");
 }
-async function loadRecentTurns(db: SupabaseClient, sessionHash: string, channel: "web" | "whatsapp"): Promise<ConversationTurn[]> {
+function safeCustomerProfile(value: unknown): CustomerProfile {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const v = value as Record<string, any>;
+  const profile: CustomerProfile = {};
+  if (["lowest_price", "cost_benefit", "quality", "unspecified"].includes(v.pricePriority)) profile.pricePriority = v.pricePriority;
+  if (Array.isArray(v.preferredBrands)) profile.preferredBrands = v.preferredBrands.filter((x: unknown) => typeof x === "string").slice(-5).map((x: string) => x.slice(0, 50));
+  if (["professional", "beginner", "unspecified"].includes(v.experienceLevel)) profile.experienceLevel = v.experienceLevel;
+  if (v.project && typeof v.project === "object" && !Array.isArray(v.project)) {
+    const p: Record<string, string> = {};
+    for (const field of ["surface", "condition", "desiredColor", "desiredFinish", "problem"] as const) {
+      if (typeof v.project[field] === "string") p[field] = v.project[field].slice(0, 80);
+    }
+    if (v.project.environment === "internal" || v.project.environment === "external") p.environment = v.project.environment;
+    profile.project = p as CustomerProfile["project"];
+  }
+  return profile;
+}
+async function loadConversationMemory(
+  db: SupabaseClient,
+  sessionHash: string,
+  channel: "web" | "whatsapp"
+): Promise<{ recentTurns: ConversationTurn[]; customerProfile: CustomerProfile }> {
+  const empty = { recentTurns: [] as ConversationTurn[], customerProfile: {} as CustomerProfile };
   try {
     const now = Date.now();
     if (now - lastMemoryPruneAt > 6 * 60 * 60 * 1000) {
@@ -26,18 +48,19 @@ async function loadRecentTurns(db: SupabaseClient, sessionHash: string, channel:
       await db.from("rgb_conversation_memory").delete().lt("expires_at", new Date(now).toISOString());
     }
     const { data, error } = await db.from("rgb_conversation_memory")
-      .select("recent_turns")
+      .select("recent_turns,customer_profile")
       .eq("session_key_hash", sessionHash)
       .eq("channel", channel)
       .gt("expires_at", new Date().toISOString())
       .maybeSingle();
-    if (error || !Array.isArray(data?.recent_turns)) return [];
-    return data.recent_turns
-      .filter((turn: any) => turn && typeof turn.user === "string" && typeof turn.assistant === "string")
-      .slice(-4)
-      .map((turn: any) => ({ user: turn.user.slice(0, 240), assistant: turn.assistant.slice(0, 360) }));
+    if (error || !data) return empty;
+    const recentTurns = Array.isArray(data.recent_turns)
+      ? data.recent_turns.filter((turn: any) => turn && typeof turn.user === "string" && typeof turn.assistant === "string")
+        .slice(-4).map((turn: any) => ({ user: turn.user.slice(0, 240), assistant: turn.assistant.slice(0, 360) }))
+      : [];
+    return { recentTurns, customerProfile: safeCustomerProfile(data.customer_profile) };
   } catch {
-    return [];
+    return empty;
   }
 }
 async function saveRecentTurns(
@@ -45,6 +68,7 @@ async function saveRecentTurns(
   sessionHash: string,
   channel: "web" | "whatsapp",
   previous: ConversationTurn[],
+  customerProfile: CustomerProfile,
   userMessage: string,
   assistantMessage: string
 ): Promise<void> {
@@ -58,11 +82,12 @@ async function saveRecentTurns(
       session_key_hash: sessionHash,
       channel,
       recent_turns: recent,
+      customer_profile: safeCustomerProfile(customerProfile),
       updated_at: now.toISOString(),
       expires_at: new Date(now.getTime() + MEMORY_TTL_MS).toISOString()
     }, { onConflict: "session_key_hash" });
   } catch {
-    // Persistence failure must not block an answer to a customer.
+    // Persistence failure must not block a response to a customer.
   }
 }
 
@@ -130,8 +155,10 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
   }
   try {
     const memoryKey = conversationHash("whatsapp", m.jid);
-    const recentTurns = await loadRecentTurns(db, memoryKey, "whatsapp");
-    const answer = await answerCustomer(db, m.text, recentTurns);
+    const memory = await loadConversationMemory(db, memoryKey, "whatsapp");
+    const recentTurns = memory.recentTurns;
+    const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), m.text]);
+    const answer = await answerCustomer(db, m.text, recentTurns, customerProfile);
     const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade ao atendimento, mantemos um contexto curto das últimas mensagens por até 30 dias. Evite enviar senhas ou dados sensíveis.";
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
     const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
@@ -152,7 +179,7 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
     }
     if (!sendResponse.ok) throw new Error("Evolution HTTP " + sendResponse.status);
     await db.from("evolution_processed_events").update({ status: "sent", processed_at: new Date().toISOString() }).eq("event_id", eventId);
-    await saveRecentTurns(db, memoryKey, "whatsapp", recentTurns, m.text, replyText);
+    await saveRecentTurns(db, memoryKey, "whatsapp", recentTurns, customerProfile, m.text, replyText);
     return json(res, 200, { accepted: true, processed: true, sent: true });
   } catch {
     await db.from("evolution_processed_events").delete().eq("event_id", eventId);
@@ -188,9 +215,11 @@ const server = createServer(async (req, res) => {
       const sessionId = String(b?.sessionId ?? "").trim().slice(0, 100);
       const validSession = sessionId.length >= 16 && /^[A-Za-z0-9_-]+$/.test(sessionId);
       const memoryKey = validSession ? conversationHash("web", sessionId) : null;
-      const recentTurns = memoryKey ? await loadRecentTurns(db, memoryKey, "web") : [];
-      const answer = await answerCustomer(db, message, recentTurns);
-      if (memoryKey) await saveRecentTurns(db, memoryKey, "web", recentTurns, message, answer.reply);
+      const memory = memoryKey ? await loadConversationMemory(db, memoryKey, "web") : { recentTurns: [] as ConversationTurn[], customerProfile: {} as CustomerProfile };
+      const recentTurns = memory.recentTurns;
+      const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), message]);
+      const answer = await answerCustomer(db, message, recentTurns, customerProfile);
+      if (memoryKey) await saveRecentTurns(db, memoryKey, "web", recentTurns, customerProfile, message, answer.reply);
       return json(res, 200, answer);
     } catch (e) { return json(res, 400, { error: e instanceof Error ? e.message.slice(0, 180) : "Falha ao processar." }); }
   }
