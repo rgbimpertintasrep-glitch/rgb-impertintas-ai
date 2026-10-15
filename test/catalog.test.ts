@@ -218,5 +218,7 @@ test("does not treat a vague yes as selecting one of two color styles", () => {
 test("preserves gray-silver as a compound color intent", () => {
   const profile = updateCustomerProfile({}, ["Quero um cinza-prata comum, sem brilho metálico."]);
   assert.equal(profile.project?.desiredColor, "cinza-prata");
-  assert.equal(profile.project?.desiredFinish, "metálico");
+  assert.equal(profile.project?.desiredFinish, undefined);
+  const metallic = updateCustomerProfile({}, ["Quero um prata metálico brilhante."]);
+  assert.equal(metallic.project?.desiredFinish, "metalico");
 });
