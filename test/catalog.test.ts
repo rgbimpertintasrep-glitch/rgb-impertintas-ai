@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { extractProducts, isStockField, normalizeAltisProduct, normalizeProducts, parseNumber } from "../src/catalog.js";
+import { queryTerms } from "../src/ai.js";
 
 test("extracts the Altis dados array", () => {
   assert.equal(extractProducts({ dados: [{ produtoId: 1, nome: "Produto" }] }).length, 1);
@@ -46,4 +47,9 @@ test("rejects oversized or malformed exports; parses currency decimals conservat
   assert.equal(parseNumber("R$ 15,50"), null);
   assert.equal(isStockField("disponivel"), true);
   assert.equal(isStockField("estoqueAtual"), false);
+});
+
+test("ignores Portuguese filler words so product queries prioritize the requested brand", () => {
+  assert.deepEqual(queryTerms("Tem maxvinil?"), ["maxvinil"]);
+  assert.deepEqual(queryTerms("Vocês têm tinta Maxvinil, por favor?"), ["tinta", "maxvinil"]);
 });
