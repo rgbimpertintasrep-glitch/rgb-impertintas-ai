@@ -7,7 +7,7 @@
 - **Preço/nome/marca na importação:** 0 divergências encontradas ao comparar os 2.018 produtos normalizados com o JSON original armazenado do Altis.
 - **Preço promocional:** 3 promoções no catálogo; comparação de regras de validação encontrou 0 divergências.
 - **Busca por marca:** código corrigido no GitHub para ignorar palavras de preenchimento como “tem”, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo. Testes de CI passaram no commit da correção de regex em 15/10.
-- **Ainda não está pronto para operação completa:** o deploy do Render não mostrava os commits novos da correção na última conferência; a sincronização automática ainda não foi comprovada; o canal WhatsApp não está conectado.
+- **Ainda não está pronto para operação completa:** correção de busca agora foi implantada no Render, mas falta validar ao vivo no navegador; a sincronização automática ainda não foi comprovada; o canal WhatsApp não está conectado.
 
 ## Checklist do que já foi feito
 
@@ -55,7 +55,7 @@ O JSON analisado não ofereceu uma categoria explícita aproveitável, então as
 
 ## O que falta para concluir
 
-- [ ] **Deploy da correção de busca no Render:** GitHub main e CI estão atualizados, mas o último deploy visível no Render ainda era o commit de documentação anterior. Confirmar no dashboard um deploy que inclua a correção e testar “Tem maxvinil?”, “Tem Luztol?” e “Tem Rhodopás?” no site. Não presumir que foi aplicado até confirmar o deploy.
+- [x] **Correção de busca implantada no Render:** deploy `dep-db8g8dui0phs73fjac40` está com status `live` desde 15/10/2026 16:50 UTC. A consulta de marca agora ignora palavras de preenchimento, prioriza o campo de marca, e a busca deixa de retornar produtos com preço zero. **Falta o teste funcional manual no navegador:** testar “Tem maxvinil?”, “Tem Luztol?” e “Tem Rhodopás?” no site e confirmar o comportamento visível.
 - [ ] **Chave NVIDIA:** confirmar que `NVIDIA_API_KEY` está cadastrada e válida no Render; depois testar uma resposta gerada pela NVIDIA. Os valores secretos não são visíveis pelas ferramentas de auditoria. Sem chave válida, o agente usa regras determinísticas.
 - [ ] **Preços zerados:** corrigir ou validar os 8 casos no Altis.
 - [ ] **Estoque:** escolher e validar, com responsável do Altis, qual campo significa saldo real vendável antes de popular `ALTIS_STOCK_FIELD`.
