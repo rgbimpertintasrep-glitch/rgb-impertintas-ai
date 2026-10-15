@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { answerCustomer, updateCustomerProfile, type ConversationTurn, type CustomerProfile } from "./ai.js";
+import { answerCustomer, updateCustomerProfile, isContextCorrection, type ConversationTurn, type CustomerProfile } from "./ai.js";
 import { isStockField } from "./catalog.js";
 import { pullAltisJson, syncAltisPayload } from "./sync.js";
 
@@ -166,10 +166,12 @@ async function handleEvolution(req: IncomingMessage, res: ServerResponse): Promi
   try {
     const memoryKey = conversationHash("whatsapp", m.jid);
     const memory = await loadConversationMemory(db, memoryKey, "whatsapp");
-    const recentTurns = memory.recentTurns;
-    const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), m.text], recentTurns);
+    const resetContext = isContextCorrection(m.text);
+    const recentTurns = resetContext ? [] : memory.recentTurns;
+    const profileBase = resetContext ? { ...memory.customerProfile, project: {} } : memory.customerProfile;
+    const customerProfile = updateCustomerProfile(profileBase, [...recentTurns.map((turn) => turn.user), m.text], recentTurns);
     const answer = await answerCustomer(db, m.text, recentTurns, customerProfile);
-    const replyText = recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade, guardamos trechos curtos das mensagens e preferências de compra/serviço por até 30 dias. Evite enviar senhas, documentos ou dados bancários.";
+    const replyText = memory.recentTurns.length ? answer.reply : answer.reply + "\n\nPara dar continuidade, guardamos trechos curtos das mensagens e preferências de compra/serviço por até 30 dias. Evite enviar senhas, documentos ou dados bancários.";
     const sendUrl = base + "/message/sendText/" + encodeURIComponent(instance);
     const number = m.jid.replace(/@s\.whatsapp\.net$/, "");
     const postText = (payload: Record<string, unknown>) => fetch(sendUrl, {
@@ -226,8 +228,10 @@ const server = createServer(async (req, res) => {
       const validSession = sessionId.length >= 16 && /^[A-Za-z0-9_-]+$/.test(sessionId);
       const memoryKey = validSession ? conversationHash("web", sessionId) : null;
       const memory = memoryKey ? await loadConversationMemory(db, memoryKey, "web") : { recentTurns: [] as ConversationTurn[], customerProfile: {} as CustomerProfile };
-      const recentTurns = memory.recentTurns;
-      const customerProfile = updateCustomerProfile(memory.customerProfile, [...recentTurns.map((turn) => turn.user), message], recentTurns);
+      const resetContext = isContextCorrection(message);
+      const recentTurns = resetContext ? [] : memory.recentTurns;
+      const profileBase = resetContext ? { ...memory.customerProfile, project: {} } : memory.customerProfile;
+      const customerProfile = updateCustomerProfile(profileBase, [...recentTurns.map((turn) => turn.user), message], recentTurns);
       const answer = await answerCustomer(db, message, recentTurns, customerProfile);
       if (memoryKey) await saveRecentTurns(db, memoryKey, "web", recentTurns, customerProfile, message, answer.reply);
       return json(res, 200, answer);
