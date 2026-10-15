@@ -75,3 +75,31 @@ test("infers useful categories from common Altis product abbreviations", () => {
   assert.equal(waterproof?.category, "Impermeabilização e vedação");
   assert.equal(texture?.category, "Texturas e revestimentos");
 });
+
+import { consultativeGuard } from "../src/ai.js";
+
+test("asks a compatibility question instead of listing products for a silver masonry wall", () => {
+  const reply = consultativeGuard("Quero pintar um muro de prata, qual você recomenda?");
+  assert.match(reply ?? "", /efeito prata metálico brilhante ou só um tom cinza-prata comum/i);
+  assert.doesNotMatch(reply ?? "", /R\$|BROCAL|ESMALTE SINTETICO LUZTOL/i);
+});
+
+test("uses only customer messages to determine whether metallic effect was confirmed", () => {
+  const recent = [{
+    user: "Quero pintar um muro de prata, qual você recomenda?",
+    assistant: "Você quer um efeito prata metálico brilhante ou só um tom cinza-prata comum?"
+  }];
+  const reply = consultativeGuard("Só quero um tom cinza-prata comum.", recent);
+  assert.match(reply ?? "", /tinta acrílica própria para parede/i);
+  assert.match(reply ?? "", /pega sol e chuva/i);
+});
+
+test("does not recommend an unverified metallic system for masonry", () => {
+  const recent = [{
+    user: "Quero pintar um muro de prata, qual você recomenda?",
+    assistant: "Você quer um efeito prata metálico brilhante ou só um tom cinza-prata comum?"
+  }];
+  const reply = consultativeGuard("Quero efeito prata metálico mesmo.", recent);
+  assert.match(reply ?? "", /ficha técnica/i);
+  assert.match(reply ?? "", /reboco\/cimento/i);
+});
