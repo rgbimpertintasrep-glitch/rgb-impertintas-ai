@@ -1,5 +1,10 @@
 # RGB Impertintas AI + Altis Sync
 
+## Comece aqui se você não é técnico
+
+**Leia primeiro o [GUIA PARA INICIANTE](GUIA_PARA_INICIANTE.md).** Ele orienta, passo a passo, como configurar o Supabase, NVIDIA Build, importar o catálogo e entender o que falta para conectar o WhatsApp.
+
+
 Agente comercial da RGB Impertintas, catálogo consultável em Supabase, sincronização do Altis por exportação JSON e integração Evolution API.
 
 ## Links da aplicação
