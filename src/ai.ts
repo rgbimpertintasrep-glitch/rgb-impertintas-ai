@@ -1,6 +1,81 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ConversationTurn = { user: string; assistant: string };
+
+export type CustomerProfile = {
+  pricePriority?: "lowest_price" | "cost_benefit" | "quality" | "unspecified";
+  preferredBrands?: string[];
+  experienceLevel?: "professional" | "beginner" | "unspecified";
+  project?: {
+    surface?: string;
+    environment?: "internal" | "external";
+    condition?: string;
+    desiredColor?: string;
+    desiredFinish?: string;
+    problem?: string;
+  };
+};
+const KNOWN_BRANDS = ["maxvinil", "luztol", "leinertex", "colatex", "sherwin-williams", "suvinil", "coral", "rhodopas", "vedacit", "sika", "rendcolor", "rendcril", "kolore"];
+/** Saves only explicit buying preferences and the current project facts, never sensitive personal data. */
+export function updateCustomerProfile(existing: CustomerProfile = {}, userMessages: string[]): CustomerProfile {
+  const profile: CustomerProfile = {
+    ...existing,
+    preferredBrands: [...new Set((existing.preferredBrands ?? []).slice(0, 5))],
+    project: { ...(existing.project ?? {}) }
+  };
+  const messages = userMessages.slice(-6);
+  for (const text of messages) {
+    const n = norm(text);
+    if (/\b(mais barato|o mais barato|menor preco|menor preço|mais economico|mais econômica|economizar|sem gastar muito|barat[oa])\b/.test(n)) profile.pricePriority = "lowest_price";
+    else if (/\b(custo beneficio|custo-beneficio|equilibrio entre preco e qualidade|bom e barato|vale mais a pena)\b/.test(n)) profile.pricePriority = "cost_benefit";
+    else if (/\b(qualidade acima do preco|melhor qualidade|premium|mais duravel|mais resistente|nao importa o preco|não importa o preço)\b/.test(n)) profile.pricePriority = "quality";
+    if (/\b(sou pintor|sou profissional|trabalho com pintura|pintor profissional|tenho experiencia com pintura)\b/.test(n)) profile.experienceLevel = "professional";
+    else if (/\b(nunca pintei|nao entendo de pintura|sou leigo|sou iniciante|me explica simples|nao entendo disso)\b/.test(n)) profile.experienceLevel = "beginner";
+    if (/\b(prefiro|minha marca|gosto mais da marca|so compro|só compro|quero especificamente|quero da marca)\b/.test(n)) {
+      const found = KNOWN_BRANDS.filter((brand) => n.includes(brand));
+      profile.preferredBrands = [...new Set([...(profile.preferredBrands ?? []), ...found])].slice(-5);
+    }
+    const p = profile.project ?? {};
+    const surfaces: Array<[RegExp, string]> = [
+      [/\b(reboco|alvenaria|muro|parede|fachada|cimento)\b/, "alvenaria"],
+      [/\b(telhado|telha|telhas)\b/, "telhado/telha"],
+      [/\b(laje|terraço|terraco)\b/, "laje/terraço"],
+      [/\b(piso|chao|chão|contrapiso)\b/, "piso"],
+      [/\b(madeira|porta de madeira|janela de madeira|móvel|movel)\b/, "madeira"],
+      [/\b(portao|portão|grade|metal|ferro|estrutura metalica|estrutura metálica)\b/, "metal"],
+      [/\b(azulejo|ceramica|cerâmica)\b/, "cerâmica/azulejo"]
+    ];
+    for (const [pattern, value] of surfaces) if (pattern.test(n)) { p.surface = value; break; }
+    if (/\b(externo|externa|ao tempo|sol e chuva|pega sol|pega chuva|fachada)\b/.test(n)) p.environment = "external";
+    else if (/\b(interno|interna|dentro de casa|ambiente interno)\b/.test(n)) p.environment = "internal";
+    const conditions: Array<[RegExp, string]> = [
+      [/\b(reboco cru|reboco novo|sem pintura|sem pintar)\b/, "reboco cru/novo"],
+      [/\b(descascando|descascada|tinta soltando|descascamento)\b/, "pintura descascando"],
+      [/\b(j[aá] pintado|pintura antiga|tinta velha)\b/, "já pintado"],
+      [/\b(com ferrugem|enferrujado|ferrugem)\b/, "ferrugem"],
+      [/\b(umidade|mofo|infiltracao|infiltração|goteira|vazamento)\b/, "umidade/infiltração"],
+      [/\b(trinca|rachadura|fissura)\b/, "trinca/fissura"]
+    ];
+    for (const [pattern, value] of conditions) if (pattern.test(n)) { p.condition = value; break; }
+    const finishes = ["fosco", "acetinado", "semibrilho", "semi brilho", "brilhante", "metalico", "metálico", "textura"];
+    const finish = finishes.find((x) => n.includes(norm(x)));
+    if (finish) p.desiredFinish = finish;
+    const colors = ["branco", "preto", "prata", "cinza", "azul", "verde", "amarelo", "vermelho", "bege", "palha", "camurca", "marrom", "rosa", "roxo", "dourado"];
+    const color = colors.find((x) => new RegExp("\\b" + x + "\\b").test(n));
+    if (color) p.desiredColor = color;
+    const problems: Array<[RegExp, string]> = [
+      [/\b(infiltracao|infiltração|goteira|vazamento)\b/, "infiltração/vazamento"],
+      [/\b(mofo|fungo|bolor)\b/, "mofo/bolor"],
+      [/\b(descascando|descascamento|tinta soltando)\b/, "descascamento"],
+      [/\b(ferrugem|enferrujado)\b/, "ferrugem"],
+      [/\b(fissura|trinca|rachadura)\b/, "fissura/trinca"]
+    ];
+    for (const [pattern, value] of problems) if (pattern.test(n)) { p.problem = value; break; }
+    profile.project = p;
+  }
+  return profile;
+}
+
 type Product = {
   erp_code: string; name: string; brand: string | null; category: string | null; category_source?: string | null;
   retail_price: number | null; promotional_price: number | null; stock_quantity: number | null;
@@ -192,8 +267,8 @@ const TOOL_DEFINITIONS: any[] = [
     type: "function",
     function: {
       name: "search_catalog",
-      description: "Busca produtos ativos e visíveis do catálogo RGB por nome, marca ou termo de uso. Use para conferir se existe uma opção adequada antes de recomendar. Nunca infira compatibilidade técnica apenas pela cor/nome.",
-      parameters: { type: "object", properties: { query: { type: "string", description: "Termos específicos para localizar produto ou linha no catálogo RGB." } }, required: ["query"], additionalProperties: false }
+      description: "Busca produtos ativos e visíveis do catálogo RGB. Ao recomendar, procure primeiro o tipo de produto/superfície compatível, depois a cor. Se não houver correspondência exata, faça buscas amplas para alternativas da mesma aplicação. Nome/cor não provam compatibilidade.",
+      parameters: { type: "object", properties: { query: { type: "string", description: "Uma busca por produto ou uso." }, queries: { type: "array", items: { type: "string" }, maxItems: 3, description: "Até três buscas: produto/cor exatos, produto compatível com a superfície, e alternativa de menor custo/linha equivalente." } }, additionalProperties: false }
     }
   },
   {
@@ -214,8 +289,8 @@ const TOOL_DEFINITIONS: any[] = [
   }
 ];
 const OFFICIAL_DOMAINS = [
-  "suvinil.com.br", "coral.com.br", "tintascoral.com.br", "sherwin-williams.com.br",
-  "luztol.com.br", "maxvinil.com.br", "leinertex.com.br", "colatex.com.br",
+  "suvinil.com.br", "loja.suvinil.com.br", "coral.com.br", "sherwin.com.br", "sherwin-auto.com.br",
+  "luztol.com.br", "loja.luztol.com.br", "maxvinil.com.br", "leinertex.com.br",
   "rhodopas.com.br", "vedacit.com.br", "sika.com", "viapol.com.br", "weber.com.br"
 ];
 async function webSearchOfficial(query: string): Promise<unknown> {
@@ -255,20 +330,32 @@ async function executeTool(db: SupabaseClient, name: string, rawArgs: string): P
   let args: any;
   try { args = JSON.parse(rawArgs || "{}"); } catch { return { error: "Argumentos inválidos." }; }
   const query = String(args?.query ?? "").trim().slice(0, 180);
-  if (!query) return { error: "Informe os termos da busca." };
+  const queries = (Array.isArray(args?.queries) ? args.queries : [query]).map((x: unknown) => String(x ?? "").trim().slice(0, 180)).filter(Boolean).slice(0, 3);
+  if (!queries.length) return { error: "Informe os termos da busca." };
   if (name === "search_catalog") {
-    const found = await searchProducts(db, query);
-    return found.slice(0, 6).map(productForCustomer);
+    const batches = await Promise.all(queries.map((term: string) => searchProducts(db, term)));
+    const unique = new Map<string, Product>();
+    for (const product of batches.flat()) unique.set(product.erp_code, product);
+    return [...unique.values()].slice(0, 10).map(productForCustomer);
   }
-  if (name === "search_technical_knowledge") return await facts(db, query);
-  if (name === "search_official_web") return await webSearchOfficial(query);
+  if (name === "search_technical_knowledge") {
+    const batches = await Promise.all(queries.map((term: string) => facts(db, term)));
+    const unique = new Map<string, Knowledge>();
+    for (const article of batches.flat()) unique.set(article.title, article);
+    return [...unique.values()].slice(0, 6);
+  }
+  if (name === "search_official_web") {
+    const batches = await Promise.all(queries.slice(0, 2).map((term: string) => webSearchOfficial(term)));
+    return batches;
+  }
   return { error: "Ferramenta desconhecida." };
 }
 
 export async function answerCustomer(
   db: SupabaseClient,
   question: string,
-  recentTurns: ConversationTurn[] = []
+  recentTurns: ConversationTurn[] = [],
+  customerProfile: CustomerProfile = {}
 ): Promise<{ reply: string; mode: string; productsFound: number }> {
   const q = question.trim().slice(0, 1200);
   const recent = recentTurns.slice(-4).map((turn) => ({
@@ -301,9 +388,13 @@ export async function answerCustomer(
     current_customer_message: q,
     candidate_products: products.slice(0, 5).map(productForCustomer),
     internal_technical_articles: knowledge,
+    customer_profile: customerProfile,
     operating_rules: [
       "Faça diagnóstico consultivo, não busca por palavra-chave. Nunca sugira produto só por cor/nome.",
-      "Se faltar informação decisiva, faça UMA pergunta curta antes de recomendar.",
+      "Se faltar informação decisiva, faça UMA pergunta curta antes de recomendar. Aproveite respostas anteriores sem repetir pergunta que o cliente já respondeu.",
+      "Personalize a recomendação conforme preferência explicitada pelo cliente: preço mínimo, custo-benefício, qualidade/marca ou experiência. Não presuma preferência; se isso mudar a escolha e ainda não estiver claro, pergunte naturalmente.",
+      "Se a cor exata não aparecer no catálogo, não encerre a venda e não invente disponibilidade: confirme se o cliente aceita cor aproximada, pesquise produtos equivalentes de aplicação compatível e explique o que é aproximação. Só mencione tintometria/mistura sob encomenda se a fonte confirmar que esse serviço está disponível.",
+      "Considere toda a jornada: produto certo, preparação da superfície, acessórios necessários, rendimento e quantidade só quando houver ficha técnica e área informada. Apresente melhor opção e alternativa de menor custo/mais qualidade quando a evidência permitir.",
       "Compatibilidade técnica vem antes do preço. Compare preço só entre produtos compatíveis e com preço válido.",
       "Nome/categoria inferida não prova aplicação. Produtos automotivos, esmaltes para metal/madeira e tintas de parede são usos diferentes.",
       "Para uma recomendação, use ferramenta de catálogo/artigos ou web oficial se faltar dado técnico. Não diga que pesquisou na internet se a ferramenta não retornou resultado.",
@@ -332,10 +423,10 @@ export async function answerCustomer(
           tools,
           tool_choice: "auto",
           temperature: 0.2,
-          max_tokens: 900,
+          max_tokens: 1400,
           stream: false,
           chat_template_kwargs: { enable_thinking: true },
-          reasoning_budget: 384
+          thinking_token_budget: 500
         }),
         signal: AbortSignal.timeout(18000)
       });
@@ -362,8 +453,10 @@ export async function answerCustomer(
         continue;
       }
       const generated = message.content;
-      if (typeof generated !== "string" || !generated.trim()) return { reply: base, mode: "rules_fallback", productsFound: products.length };
-      return { reply: generated.trim().slice(0, 1200), mode: "nvidia_thinking_tools", productsFound: products.length };
+      if (data?.choices?.[0]?.finish_reason === "length" || typeof generated !== "string" || !generated.trim()) return { reply: base, mode: "rules_fallback", productsFound: products.length };
+      const customerVisible = generated.replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+      if (!customerVisible) return { reply: base, mode: "rules_fallback", productsFound: products.length };
+      return { reply: customerVisible.slice(0, 1200), mode: "nvidia_thinking_tools", productsFound: products.length };
     }
     return { reply: base, mode: "rules_fallback", productsFound: products.length };
   } catch {
