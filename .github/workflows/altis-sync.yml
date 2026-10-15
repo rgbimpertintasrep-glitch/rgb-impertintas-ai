@@ -18,15 +18,15 @@ jobs:
       - name: Connect private Tailscale network
         uses: tailscale/github-action@v4
         with:
-          authkey: \${{ secrets.TAILSCALE_AUTHKEY }}
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: rgb-altis-sync
           args: --accept-routes
       - name: Check required secrets
         shell: bash
         env:
-          ALTIS_EXPORT_URL: \${{ secrets.ALTIS_EXPORT_URL }}
-          RENDER_APP_URL: \${{ secrets.RENDER_APP_URL }}
-          SYNC_ADMIN_TOKEN: \${{ secrets.SYNC_ADMIN_TOKEN }}
+          ALTIS_EXPORT_URL: ${{ secrets.ALTIS_EXPORT_URL }}
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
         run: |
           test -n "$ALTIS_EXPORT_URL" || { echo "Missing ALTIS_EXPORT_URL secret"; exit 1; }
           test -n "$RENDER_APP_URL" || { echo "Missing RENDER_APP_URL secret"; exit 1; }
@@ -42,10 +42,10 @@ jobs:
         run: npm run typecheck && npm test && npm run build
       - name: Sync protected Altis snapshot to Render
         env:
-          ALTIS_EXPORT_URL: \${{ secrets.ALTIS_EXPORT_URL }}
-          ALTIS_EXPORT_TOKEN: \${{ secrets.ALTIS_EXPORT_TOKEN }}
-          ALTIS_STOCK_FIELD: \${{ vars.ALTIS_STOCK_FIELD }}
-          ALTIS_EXPORT_IS_FULL_SNAPSHOT: \${{ vars.ALTIS_EXPORT_IS_FULL_SNAPSHOT }}
-          RENDER_APP_URL: \${{ secrets.RENDER_APP_URL }}
-          SYNC_ADMIN_TOKEN: \${{ secrets.SYNC_ADMIN_TOKEN }}
+          ALTIS_EXPORT_URL: ${{ secrets.ALTIS_EXPORT_URL }}
+          ALTIS_EXPORT_TOKEN: ${{ secrets.ALTIS_EXPORT_TOKEN }}
+          ALTIS_STOCK_FIELD: ${{ vars.ALTIS_STOCK_FIELD }}
+          ALTIS_EXPORT_IS_FULL_SNAPSHOT: ${{ vars.ALTIS_EXPORT_IS_FULL_SNAPSHOT }}
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          SYNC_ADMIN_TOKEN: ${{ secrets.SYNC_ADMIN_TOKEN }}
         run: npm run sync:push
