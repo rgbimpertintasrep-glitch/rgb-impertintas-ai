@@ -17,13 +17,15 @@ Já está publicado:
 
 ## Memória de conversa e consumo de tokens
 
-A memória curta do atendimento foi implementada no serviço: guarda no Supabase somente as últimas 4 trocas abreviadas de cada conversa, vinculadas a um identificador derivado por chave, com validade de 30 dias. O prompt da NVIDIA recebe até as 3 últimas trocas, quando a pergunta exige orientação mais elaborada. A página web e o webhook do WhatsApp usam essa memória separadamente. A primeira resposta no WhatsApp informa ao cliente que esse contexto curto é guardado por até 30 dias; a página web também exibe esse aviso.
+A memória curta guarda até 4 trocas abreviadas por conversa, e o perfil estruturado guarda apenas preferências explicitamente informadas e fatos do serviço atual, por até 30 dias. O perfil pode registrar prioridade de compra (menor preço, custo-benefício ou qualidade), marca preferida, nível de experiência, superfície, ambiente, estado da superfície, cor e acabamento desejados. A identidade da conversa é protegida por hash; mensagens guardadas têm padrões comuns de e-mail, documentos e segredos removidos. Isso reduz dados desnecessários, mas não é garantia de que todo dado sensível seja detectado: não envie senhas, documentos nem dados bancários. A página web e o webhook do WhatsApp usam a memória separadamente.
 
 O agente foi ajustado para:
 - responder consultas simples de marca, preço, contato e endereço sem chamar a NVIDIA quando uma resposta determinística basta;
-- buscar no máximo 4 artigos públicos relevantes, com conteúdo reduzido;
-- enviar no máximo 5 candidatos do catálogo ao modelo; não tratar candidatos como recomendações sem verificar aplicação;
-- usar modo thinking nas perguntas complexas, com orçamento de raciocínio limitado e até 900 tokens de geração; usar temperatura 0,2;
+- consultar até 40 artigos da base técnica, selecionar os mais relevantes e enviar até 4 trechos com conteúdo limitado;
+- buscar candidatos por nome/marca e também expandir abreviações comuns do Altis, como ACR/acrílica;
+- filtrar incompatibilidades conhecidas antes de recomendar e ordenar opções pelo menor preço somente quando o cliente declarar essa prioridade;
+- habilitar thinking nas perguntas complexas, com orçamento de raciocínio de até 500 tokens e limite combinado de 1.400 tokens para raciocínio + resposta; usar temperatura 0,2;
+- aceitar chamadas de ferramentas do modelo para pesquisar o catálogo e os artigos internos, em até 3 rodadas; caso o endpoint rejeite o formato de ferramentas, tenta uma resposta com thinking sem ferramentas;
 - nunca enviar ao modelo o payload bruto do Altis, custos internos ou campos confidenciais;
 - não informar estoque enquanto o campo correto não tiver sido confirmado.
 
@@ -122,7 +124,11 @@ Teste estas mensagens uma de cada vez:
 1. Bom dia
 2. Vocês trabalham com Maxvinil?
 3. Qual o preço do esmalte Cobert ex 3,6 L camurça? (use o nome tal como aparece no seu catálogo)
-4. Preciso pintar uma parede. O que vocês precisam saber para me orientar?
+4. Quero pintar um muro de prata; qual você recomenda?
+5. Só quero um cinza-prata comum, e o muro pega sol e chuva.
+6. Não quero o mais barato: priorizo qualidade e durabilidade.
+7. Não temos a cor exata? Procure a alternativa mais próxima, sem garantir igualdade de cor.
+8. Agora quero pintar um portão de madeira. (verifique se não usa o contexto antigo do muro)
 
 Confira se o preço coincide com o Altis. Não considere o estoque validado ainda. A personalidade do agente foi configurada para ser acolhedora, prática, consultiva e curta, como um bom atendente de balcão da RGB — sem inventar dados e sem pressionar o cliente.
 
@@ -226,3 +232,10 @@ O sistema deve respeitar pedidos para não receber novas mensagens e evitar disp
 - [ ] Decidido onde hospedar a Evolution com persistência, ou optar pela API oficial da Meta.
 - [ ] WhatsApp testado em conversa individual antes de abrir aos clientes.
 - [ ] Só então iniciar a sincronização automática e a prospecção de leads.
+
+
+### O que o agente ainda não pode prometer
+
+A base técnica incluída agora contém guias de diagnóstico e artigos que remetem a fabricantes, mas **ainda não é uma biblioteca completa de boletins técnicos de cada SKU do Altis**. A compatibilidade de um produto específico precisa ser confirmada pelo boletim do fabricante ou por orientação técnica validada. Não é correto garantir 100% de acerto, tintometria disponível, rendimento, saldo físico ou cor idêntica sem prova.
+
+O agente pesquisa a internet apenas depois de configurar e testar `TAVILY_API_KEY`. O thinking e a chamada de ferramentas só funcionam de verdade se `NVIDIA_API_KEY` estiver válida e o endpoint aceitar os parâmetros. Confira isso no teste funcional, pois os painéis não permitem verificar o valor secreto automaticamente. WhatsApp e sincronização automática do Altis continuam sendo integrações separadas.
