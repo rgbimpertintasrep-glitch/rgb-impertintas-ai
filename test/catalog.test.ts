@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { extractProducts, isStockField, normalizeAltisProduct, normalizeProducts, parseNumber } from "../src/catalog.js";
-import { brandAvailabilityReply, queryTerms, isContextCorrection, isExplicitPriceQuestion, priceReplyFromCatalog, productForCustomer } from "../src/ai.js";
+import { brandAvailabilityReply, queryTerms, isContextCorrection, isExplicitPriceQuestion, priceReplyFromCatalog, productForCustomer, shouldBlockUnrequestedPrice } from "../src/ai.js";
 
 test("extracts the Altis dados array", () => {
   assert.equal(extractProducts({ dados: [{ produtoId: 1, nome: "Produto" }] }).length, 1);
@@ -312,4 +312,10 @@ test("ignores an invalid promotional price above the retail price", () => {
   const reply = priceReplyFromCatalog("Qual o preço do esmalte Cobertex camurça 3,6L?", [product]);
   assert.match(reply, /R\$\s*99,90/);
   assert.doesNotMatch(reply, /R\$\s*150,00/);
+});
+
+test("blocks monetary claims in unsolicited recommendation replies", () => {
+  assert.equal(shouldBlockUnrequestedPrice("Quero uma tinta para parede externa.", "A tinta custa R$ 89,90."), true);
+  assert.equal(shouldBlockUnrequestedPrice("Quero custo-benefício.", "A linha tem bom custo-benefício."), false);
+  assert.equal(shouldBlockUnrequestedPrice("Qual o preço da tinta?", "O preço cadastrado é R$ 89,90."), false);
 });
