@@ -8,6 +8,9 @@
 - **Preço promocional:** 3 promoções no catálogo; comparação de regras de validação encontrou 0 divergências.
 - **Busca por marca:** código corrigido para ignorar palavras de preenchimento, pontuar marca acima de coincidências no nome e responder à disponibilidade da marca com base no catálogo.
 - **Recomendação técnica:** correção adicionada para impedir que uma busca por “muro de prata” despeje esmalte metálico/tinta automotiva só porque o nome contém “prata”. Primeiro pergunta se o cliente quer efeito metálico ou cinza-prata comum. A compatibilidade deve preceder o preço.
+- **Correção do problema de contexto:** frases de rejeição como “tá doido, tô falando nada disso” limpam o contexto do serviço anterior e produzem um pedido de desculpas, em vez de repetir o diagnóstico anterior. A guarda técnica também não deve se aplicar a uma nova pergunta sobre outro projeto.
+- **Preços sob pedido:** recomendação e consultas de disponibilidade não enviam preços ao modelo e os preços são removidos dos candidatos apresentados ao modelo. Apenas perguntas explicitamente sobre preço entram na rota determinística de catálogo; se houver ambiguidade, o agente pede o nome/tamanho antes de cotar. Promoção só é aceita se for positiva e inferior ao preço normal.
+- **Preço do catálogo não é garantia de atualização automática:** ainda depende da última importação do Altis; o workflow automático continua bloqueado pela configuração do Tailscale e pela ausência de um endpoint de exportação Altis verificado.
 - **Thinking e ferramentas:** código configurado para habilitar thinking do Nemotron, chamar ferramentas de busca interna no catálogo/artigos e fazer até 3 rodadas de ferramenta. A CI testa tipagem, testes e build; ainda falta teste de ponta a ponta com uma chave NVIDIA válida. Pesquisa de fabricantes na internet só funciona após configurar `TAVILY_API_KEY` no Render.
 - **Perfil consultivo persistente:** `rgb_conversation_memory.customer_profile` já foi adicionada no Supabase e versão SQL foi versionada. Guarda prioridades explicitadas (menor preço/custo-benefício/qualidade), marca preferida, experiência, superfície e contexto da obra por até 30 dias.
 - **Base técnica inicial:** 6 artigos consultivos com fontes de fabricantes foram adicionados à `public.knowledge_articles`; a tabela agora tem 13 artigos. Isso é uma base inicial, não uma biblioteca técnica completa por SKU.
@@ -23,6 +26,10 @@
 - [x] Conferida regra de preço promocional contra o payload original: 0 divergências.
 - [x] Encontrado e corrigido no código o bug de busca “Tem maxvinil?” que dava peso à palavra “tem” e encontrava “temperatura”.
 - [x] Adicionados testes para filtrar palavras comuns em português e para responder à pergunta direta de marca só com resultados do catálogo.
+- [x] Adicionada resposta determinística de preço com conferência de correspondência, promoção validada e confirmação de embalagem quando há ambiguidade.
+- [x] Bloqueado o envio espontâneo de preços ao modelo e bloqueadas menções monetárias não solicitadas em respostas generativas.
+- [x] Adicionada limpeza de contexto quando o cliente rejeita o assunto anterior; respostas não devem continuar usando o diagnóstico antigo de muro/prata para outro projeto.
+- [x] Criada a tabela segura `public.rgb_product_technical_facts` para guardar evidência técnica específica por SKU, URL de fabricante e status verificado; ainda não contém fichas técnicas verificadas por produto.
 - [x] Ajustada a classificação aproximada de produtos com abreviações do Altis e atualizada a categoria de todos os 2.018 registros no banco.
 - [x] Corrigida a sintaxe de expressões do GitHub Actions no workflow de sincronização.
 - [x] CI GitHub confirmou sucesso nos testes recentes de busca e inferência de categoria: https://github.com/rgbimpertintasrep-glitch/rgb-impertintas-ai/actions
@@ -35,10 +42,12 @@
 - [x] Site e webhook foram ligados à memória curta. Guarda até 4 trocas encurtadas por sessão, com identidade derivada por HMAC; envia até as 2 últimas trocas ao modelo nas perguntas que precisam de contexto.
 - [x] Registros vencidos são removidos periodicamente quando o serviço está ativo; validade da memória: 30 dias.
 - [x] Aviso de memória/retensão incluído no rodapé do chat web e na primeira resposta de um contato WhatsApp.
-- [x] Respostas simples evitam a NVIDIA quando a regra de catálogo basta; conhecimento limitado a 4 artigos relevantes (até 520 caracteres), até 5 candidatos de produto no contexto, thinking com orçamento de 384 e até 900 tokens de geração na rota complexa; temperatura 0,2. Busca na internet requer `TAVILY_API_KEY`.
+- [x] Respostas simples podem usar regras; consultas complexas usam thinking com orçamento de 500 tokens e limite combinado de 1.400 tokens, até 4 artigos selecionados (até 950 caracteres), até 5 candidatos de produto e até 3 rodadas de ferramentas. O endpoint tem fallback se rejeitar o formato de ferramentas. Busca online depende de `TAVILY_API_KEY`.
+- [x] Os dados de produtos enviados ao modelo não contêm preço. Perguntas de preço passam por uma função determinística que utiliza o catálogo; o modelo não é a fonte do número. Um filtro também bloqueia afirmações monetárias não solicitadas na resposta generativa.
 - [x] CI passou em typecheck, testes e build para o commit `83ac635`; commits posteriores de aviso de privacidade e documentação também passaram no CI.
-- [x] Deploy do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
-- [ ] Fazer um teste funcional depois do deploy: várias mensagens seguidas na mesma janela web e verificar se perguntas de continuação como “e para fora?” usam contexto anterior. A tabela de memória estava vazia na última consulta porque a versão nova ainda não tinha gerado conversas.
+- [x] Deploy anterior do Render `dep-db8gipui0phs73fkc5q0` ficou `live` em 15/10/2026 17:12 UTC.
+- [ ] Publicar as correções recentes de contexto/preço num novo deploy do Render e verificar que o commit mais recente está `live` antes de considerar a webchat corrigida.
+- [ ] Fazer um teste funcional depois do deploy: mensagens de correção, mudança de assunto e pedido de preço explícito na mesma janela. CI passou, mas o chat web ainda não foi verificado por meio de uma conversa HTTP ponta a ponta.
 - [ ] Confirmar `NVIDIA_API_KEY` no Render e se o modelo está efetivamente respondendo, em vez de fallback determinístico.
 - [ ] Configurar `TAVILY_API_KEY` no Render se quiser pesquisa online de fichas técnicas de fabricantes; ela ainda não foi ativada/testada.
 - [ ] Adicionar `TAVILY_API_KEY` no Render, caso queira pesquisa técnica em sites oficiais de fabricantes. Até isso ser feito e testado, internet não está ativa no agente.
